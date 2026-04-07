@@ -37,6 +37,11 @@ export const businessSettingsSchema = z.object({
   logo: z.string().url().optional().nullable(),
   tagline: z.string().max(100).optional().nullable(),
   signature: z.string().url().optional().nullable(), // Digital signature image URL
+  upiId: z
+    .string()
+    .regex(/^[a-zA-Z0-9._-]+@[a-zA-Z]+$/, "Invalid UPI ID format (e.g., name@upi)")
+    .optional()
+    .nullable(),
 })
 
 /**

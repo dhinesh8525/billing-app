@@ -1,9 +1,9 @@
 /**
  * Product by ID API Route
  *
- * GET /api/products/[id] - Get a product by ID
- * PUT /api/products/[id] - Update a product
- * DELETE /api/products/[id] - Soft delete a product
+ * GET /api/products/[id] - Get a product by ID (tenant-scoped)
+ * PUT /api/products/[id] - Update a product (tenant-scoped)
+ * DELETE /api/products/[id] - Soft delete a product (tenant admin only)
  */
 
 import { NextRequest } from "next/server"
@@ -13,9 +13,9 @@ import {
   apiResponse,
   handleApiError,
   parseBody,
-  requireAuth,
-  requireAdminAuth,
-} from "@/lib/api-utils"
+  requireTenant,
+  requireTenantAdmin,
+} from "@/lib/api-utils-tenant"
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -23,10 +23,10 @@ interface RouteParams {
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    await requireAuth()
+    const { tenantId } = await requireTenant()
     const { id } = await params
 
-    const product = await ProductService.getById(id)
+    const product = await ProductService.getById(tenantId, id)
 
     return apiResponse(product)
   } catch (error) {
@@ -36,11 +36,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
-    await requireAuth()
+    const { tenantId } = await requireTenant()
     const { id } = await params
 
     const body = await parseBody(request, updateProductSchema)
-    const product = await ProductService.update(id, body)
+    const product = await ProductService.update(tenantId, id, body)
 
     return apiResponse(product)
   } catch (error) {
@@ -50,11 +50,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    // Only admins can delete products
-    await requireAdminAuth()
+    // Only tenant admins can delete products
+    const { tenantId } = await requireTenantAdmin()
     const { id } = await params
 
-    const product = await ProductService.delete(id)
+    const product = await ProductService.delete(tenantId, id)
 
     return apiResponse({ message: "Product deleted", product })
   } catch (error) {

@@ -1,8 +1,8 @@
 /**
  * Parties API Route
  *
- * GET /api/parties - List parties with filtering
- * POST /api/parties - Create a new party
+ * GET /api/parties - List parties with filtering (tenant-scoped)
+ * POST /api/parties - Create a new party (tenant-scoped)
  */
 
 import { NextRequest } from "next/server"
@@ -13,16 +13,16 @@ import {
   handleApiError,
   parseBody,
   parseSearchParams,
-  requireAuth,
-} from "@/lib/api-utils"
+  requireTenant,
+} from "@/lib/api-utils-tenant"
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAuth()
+    const { tenantId } = await requireTenant()
 
     const searchParams = request.nextUrl.searchParams
     const query = parseSearchParams(searchParams, partyQuerySchema)
-    const result = await PartyService.list(query)
+    const result = await PartyService.list(tenantId, query)
 
     return apiResponse(result)
   } catch (error) {
@@ -32,10 +32,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAuth()
+    const { tenantId } = await requireTenant()
 
     const body = await parseBody(request, createPartySchema)
-    const party = await PartyService.create(body)
+    const party = await PartyService.create(tenantId, body)
 
     return apiResponse(party, 201)
   } catch (error) {

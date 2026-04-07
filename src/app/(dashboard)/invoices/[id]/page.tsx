@@ -2,10 +2,12 @@
  * Invoice Detail Page
  *
  * Displays full invoice details with print functionality.
+ * MULTI-TENANT: All data is scoped to the current tenant.
  */
 
 import { notFound } from "next/navigation"
 import Link from "next/link"
+import { requireTenantContext } from "@/lib/tenant"
 import { BillingService, SettingsService } from "@/services"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -27,13 +29,11 @@ import {
 } from "@/components/ui/table"
 import {
   ArrowLeft,
-  Printer,
-  Download,
-  Mail,
   Phone,
   MapPin,
 } from "lucide-react"
 import { InvoiceActions } from "@/components/invoices/invoice-actions"
+import { InvoicePdfActions } from "@/components/invoices/invoice-pdf-actions"
 
 interface InvoiceDetailPageProps {
   params: Promise<{ id: string }>
@@ -68,16 +68,17 @@ function getPaymentBadge(status: string) {
 export default async function InvoiceDetailPage({
   params,
 }: InvoiceDetailPageProps) {
+  const { tenantId } = await requireTenantContext()
   const { id } = await params
 
   let invoice
   try {
-    invoice = await BillingService.getById(id)
+    invoice = await BillingService.getById(tenantId, id)
   } catch {
     notFound()
   }
 
-  const businessSettings = await SettingsService.get("business")
+  const businessSettings = await SettingsService.get(tenantId, "business")
 
   return (
     <div className="space-y-6">
@@ -105,18 +106,11 @@ export default async function InvoiceDetailPage({
         </div>
 
         <div className="flex gap-2">
-          <Button variant="outline" size="sm">
-            <Mail className="h-4 w-4 mr-2" />
-            Email
-          </Button>
-          <Button variant="outline" size="sm">
-            <Download className="h-4 w-4 mr-2" />
-            Download
-          </Button>
-          <Button size="sm">
-            <Printer className="h-4 w-4 mr-2" />
-            Print
-          </Button>
+          <InvoicePdfActions
+            invoiceId={invoice.id}
+            invoiceNumber={invoice.invoiceNumber}
+            customerEmail={invoice.customerEmail || invoice.party?.email}
+          />
           {invoice.status !== "CANCELLED" && (
             <InvoiceActions invoice={invoice} />
           )}

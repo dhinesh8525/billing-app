@@ -1,8 +1,8 @@
 /**
  * Categories API Route
  *
- * GET /api/categories - List all categories
- * POST /api/categories - Create a new category
+ * GET /api/categories - List all categories (tenant-scoped)
+ * POST /api/categories - Create a new category (tenant-scoped, admin only)
  */
 
 import { NextRequest } from "next/server"
@@ -12,9 +12,9 @@ import {
   apiResponse,
   handleApiError,
   parseBody,
-  requireAuth,
-  requireAdminAuth,
-} from "@/lib/api-utils"
+  requireTenant,
+  requireTenantAdmin,
+} from "@/lib/api-utils-tenant"
 
 const createCategorySchema = z.object({
   name: z.string().min(2).max(50),
@@ -23,9 +23,9 @@ const createCategorySchema = z.object({
 
 export async function GET() {
   try {
-    await requireAuth()
+    const { tenantId } = await requireTenant()
 
-    const categories = await ProductService.getCategories()
+    const categories = await ProductService.getCategories(tenantId)
 
     return apiResponse(categories)
   } catch (error) {
@@ -35,10 +35,11 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAdminAuth()
+    const { tenantId } = await requireTenantAdmin()
 
     const body = await parseBody(request, createCategorySchema)
     const category = await ProductService.createCategory(
+      tenantId,
       body.name,
       body.description
     )

@@ -2,10 +2,12 @@
  * Invoices List Page
  *
  * Displays all invoices with filtering and search.
+ * MULTI-TENANT: All data is scoped to the current tenant.
  */
 
 import { Suspense } from "react"
 import Link from "next/link"
+import { requireTenantContext } from "@/lib/tenant"
 import { BillingService } from "@/services"
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -38,6 +40,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
 } from "lucide-react"
+import { ExportMenu } from "@/components/export-button"
 
 interface InvoicesPageProps {
   searchParams: Promise<{
@@ -80,8 +83,9 @@ async function InvoicesTable({
 }: {
   searchParams: InvoicesPageProps["searchParams"]
 }) {
+  const { tenantId } = await requireTenantContext()
   const params = await searchParams
-  const result = await BillingService.list({
+  const result = await BillingService.list(tenantId, {
     search: params.search,
     type: params.type as "SALE" | "PURCHASE" | undefined,
     status: params.status as "COMPLETED" | "DRAFT" | "CANCELLED" | undefined,
@@ -310,6 +314,16 @@ export default async function InvoicesPage({
                   <SelectItem value="unpaid">Unpaid</SelectItem>
                 </SelectContent>
               </Select>
+
+              <ExportMenu
+                buttonLabel="Export"
+                exports={[
+                  { type: "invoices", label: "All Invoices (CSV)", showDateFilter: true },
+                  { type: "invoice-items", label: "Invoice Items (CSV)", showDateFilter: true },
+                  { type: "gst", label: "GST Report (CSV)", showDateFilter: true },
+                  { type: "hsn", label: "HSN Summary (CSV)", showDateFilter: true },
+                ]}
+              />
             </div>
           </div>
         </CardHeader>

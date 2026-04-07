@@ -7,7 +7,7 @@
  * Features product search, cart management, and invoice creation.
  */
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -30,6 +30,8 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { ProductSearch } from "@/components/billing/product-search"
 import { InvoiceCart } from "@/components/billing/invoice-cart"
+import { BarcodeScanButton } from "@/components/barcode/barcode-scanner"
+import { PaymentQRDialog } from "@/components/qrcode/payment-qr-dialog"
 import { toast } from "sonner"
 import { formatCurrency } from "@/lib/utils"
 import {
@@ -42,6 +44,7 @@ import {
   Check,
   Printer,
   User,
+  QrCode,
 } from "lucide-react"
 import { CartItem } from "@/types"
 
@@ -56,6 +59,9 @@ const paymentModes = [
 export default function BillingPage() {
   const router = useRouter()
 
+  // Refs for keyboard navigation
+  const customerNameRef = useRef<HTMLInputElement>(null)
+
   // Cart state
   const [items, setItems] = useState<CartItem[]>([])
   const [discountPercent, setDiscountPercent] = useState(0)
@@ -68,11 +74,56 @@ export default function BillingPage() {
   // Payment state
   const [paymentMode, setPaymentMode] = useState("cash")
   const [showPaymentDialog, setShowPaymentDialog] = useState(false)
+  const [showPaymentQR, setShowPaymentQR] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [completedInvoice, setCompletedInvoice] = useState<{
     invoiceNumber: string
     total: number
   } | null>(null)
+
+  // Billing page keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if in input (except function keys)
+      const target = e.target as HTMLElement
+      const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA"
+      const isFunctionKey = e.key.startsWith("F")
+
+      if (isInput && !isFunctionKey) return
+
+      switch (e.key) {
+        case "F2":
+          e.preventDefault()
+          // Focus search - we need to call a method on ProductSearch
+          const searchInput = document.querySelector(
+            '[data-search-input="true"]'
+          ) as HTMLInputElement
+          if (searchInput) {
+            searchInput.focus()
+            searchInput.select()
+          }
+          break
+        case "F3":
+          e.preventDefault()
+          customerNameRef.current?.focus()
+          break
+        case "F12":
+          e.preventDefault()
+          if (items.length > 0 && !showPaymentDialog) {
+            setShowPaymentDialog(true)
+          }
+          break
+        case "Escape":
+          if (showPaymentDialog) {
+            setShowPaymentDialog(false)
+          }
+          break
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown)
+    return () => document.removeEventListener("keydown", handleKeyDown)
+  }, [items.length, showPaymentDialog])
 
   // Calculate totals
   const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0)
@@ -133,6 +184,33 @@ export default function BillingPage() {
         },
       ])
       toast.success(`${product.name} added to cart`)
+    }
+  }
+
+  // Handle barcode scan
+  const handleBarcodeScan = async (barcode: string) => {
+    try {
+      // Search for product by SKU/barcode
+      const response = await fetch(
+        `/api/products/search?q=${encodeURIComponent(barcode)}&limit=1`
+      )
+      const data = await response.json()
+
+      if (data.success && data.data.length > 0) {
+        const product = data.data[0]
+        handleAddProduct({
+          ...product,
+          price: typeof product.price === "object" && product.price?.toNumber
+            ? product.price.toNumber()
+            : Number(product.price),
+        })
+      } else {
+        toast.error(`Product not found: ${barcode}`, {
+          description: "No product matches this barcode",
+        })
+      }
+    } catch {
+      toast.error("Failed to search for product")
     }
   }
 
@@ -224,43 +302,52 @@ export default function BillingPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-7rem)] flex gap-6">
+    <div className="min-h-[calc(100vh-7rem)] flex flex-col lg:flex-row gap-4 lg:gap-6">
       {/* Left Side - Product Search & List */}
       <div className="flex-1 flex flex-col">
         <Card className="flex-1 flex flex-col">
           <CardHeader className="pb-4">
             <CardTitle>Sale Invoice</CardTitle>
-            <CardDescription>
+            <CardDescription className="hidden sm:block">
               Search and add products to create an invoice
             </CardDescription>
           </CardHeader>
           <CardContent className="flex-1 flex flex-col">
-            {/* Product Search */}
-            <ProductSearch onSelect={handleAddProduct} autoFocus />
+            {/* Product Search with Barcode Scanner */}
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <ProductSearch onSelect={handleAddProduct} autoFocus />
+              </div>
+              <BarcodeScanButton
+                onScan={handleBarcodeScan}
+                className="h-12 w-12"
+              />
+            </div>
 
             {/* Quick Info */}
-            <div className="grid grid-cols-3 gap-4 mt-6">
-              <div className="p-4 rounded-lg bg-slate-50">
-                <p className="text-sm text-slate-500">Items</p>
-                <p className="text-2xl font-bold">{items.length}</p>
+            <div className="grid grid-cols-3 gap-2 sm:gap-4 mt-4 sm:mt-6">
+              <div className="p-3 sm:p-4 rounded-lg bg-slate-50">
+                <p className="text-xs sm:text-sm text-slate-500">Items</p>
+                <p className="text-xl sm:text-2xl font-bold">{items.length}</p>
               </div>
-              <div className="p-4 rounded-lg bg-slate-50">
-                <p className="text-sm text-slate-500">Subtotal</p>
-                <p className="text-2xl font-bold">{formatCurrency(subtotal)}</p>
+              <div className="p-3 sm:p-4 rounded-lg bg-slate-50">
+                <p className="text-xs sm:text-sm text-slate-500">Subtotal</p>
+                <p className="text-lg sm:text-2xl font-bold">{formatCurrency(subtotal)}</p>
               </div>
-              <div className="p-4 rounded-lg bg-primary/10">
-                <p className="text-sm text-primary">Total</p>
-                <p className="text-2xl font-bold text-primary">
+              <div className="p-3 sm:p-4 rounded-lg bg-primary/10">
+                <p className="text-xs sm:text-sm text-primary">Total</p>
+                <p className="text-lg sm:text-2xl font-bold text-primary">
                   {formatCurrency(roundedTotal)}
                 </p>
               </div>
             </div>
 
             {/* Customer Info */}
-            <div className="grid grid-cols-2 gap-4 mt-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 sm:mt-6">
               <div className="space-y-2">
-                <Label htmlFor="customerName">Customer Name (Optional)</Label>
+                <Label htmlFor="customerName">Customer Name (Optional) <span className="text-xs text-slate-400">F3</span></Label>
                 <Input
+                  ref={customerNameRef}
                   id="customerName"
                   placeholder="Walk-in Customer"
                   value={customerName}
@@ -281,9 +368,9 @@ export default function BillingPage() {
             </div>
 
             {/* Discount */}
-            <div className="mt-6">
+            <div className="mt-4 sm:mt-6">
               <Label htmlFor="discount">Discount %</Label>
-              <div className="flex gap-2 mt-2">
+              <div className="flex flex-wrap gap-2 mt-2">
                 {[0, 5, 10, 15, 20].map((d) => (
                   <Button
                     key={d}
@@ -312,7 +399,7 @@ export default function BillingPage() {
       </div>
 
       {/* Right Side - Cart */}
-      <Card className="w-96 flex flex-col">
+      <Card className="lg:w-96 flex flex-col">
         <CardHeader>
           <CardTitle>Cart</CardTitle>
         </CardHeader>
@@ -344,14 +431,28 @@ export default function BillingPage() {
                 ))}
               </div>
 
-              <Button
-                className="w-full h-14 text-lg"
-                onClick={() => setShowPaymentDialog(true)}
-                disabled={items.length === 0}
-              >
-                <CreditCard className="mr-2 h-5 w-5" />
-                Pay {formatCurrency(roundedTotal)}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1 h-14 text-lg relative"
+                  onClick={() => setShowPaymentDialog(true)}
+                  disabled={items.length === 0}
+                >
+                  <CreditCard className="mr-2 h-5 w-5" />
+                  Pay {formatCurrency(roundedTotal)}
+                  <kbd className="absolute right-3 px-1.5 py-0.5 bg-white/20 rounded text-xs ml-2">
+                    F12
+                  </kbd>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-14 px-4"
+                  onClick={() => setShowPaymentQR(true)}
+                  disabled={items.length === 0}
+                  title="Show UPI QR Code"
+                >
+                  <QrCode className="h-5 w-5" />
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>
@@ -511,6 +612,15 @@ export default function BillingPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Payment QR Dialog */}
+      <PaymentQRDialog
+        open={showPaymentQR}
+        onOpenChange={setShowPaymentQR}
+        amount={roundedTotal}
+        invoiceNumber="Preview"
+        customerName={customerName}
+      />
     </div>
   )
 }

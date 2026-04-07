@@ -3,6 +3,9 @@
  *
  * Business logic for product management including CRUD operations,
  * search functionality, and inventory management.
+ *
+ * MULTI-TENANT: All operations are scoped to tenantId
+ * FEATURE GATED: Product creation respects plan limits
  */
 
 import { prisma } from "@/lib/db"
@@ -12,18 +15,29 @@ import {
   UpdateProductInput,
   ProductSearchQuery,
 } from "@/validations/product.schema"
+import { canCreateProduct } from "@/lib/feature-gate"
 
 /**
  * Product Service class with static methods for product operations
+ * All methods require tenantId for multi-tenant isolation
  */
 export class ProductService {
   /**
    * Create a new product
+   * FEATURE GATED: Checks plan limit before creation
    */
-  static async create(data: CreateProductInput) {
-    // Check for duplicate SKU
+  static async create(tenantId: string, data: CreateProductInput) {
+    // Check plan limits
+    const limitCheck = await canCreateProduct(tenantId)
+    if (!limitCheck.allowed) {
+      throw new Error(limitCheck.reason || "Product limit reached. Please upgrade your plan.")
+    }
+
+    // Check for duplicate SKU within tenant
     const existing = await prisma.product.findUnique({
-      where: { sku: data.sku },
+      where: {
+        tenantId_sku: { tenantId, sku: data.sku },
+      },
     })
 
     if (existing) {
@@ -32,6 +46,7 @@ export class ProductService {
 
     return prisma.product.create({
       data: {
+        tenantId,
         name: data.name,
         sku: data.sku,
         description: data.description,
@@ -49,11 +64,11 @@ export class ProductService {
   }
 
   /**
-   * Get a product by ID
+   * Get a product by ID (tenant-scoped)
    */
-  static async getById(id: string) {
-    const product = await prisma.product.findUnique({
-      where: { id },
+  static async getById(tenantId: string, id: string) {
+    const product = await prisma.product.findFirst({
+      where: { id, tenantId },
       include: { category: true },
     })
 
@@ -65,21 +80,26 @@ export class ProductService {
   }
 
   /**
-   * Get a product by SKU
+   * Get a product by SKU (tenant-scoped)
    */
-  static async getBySku(sku: string) {
+  static async getBySku(tenantId: string, sku: string) {
     return prisma.product.findUnique({
-      where: { sku },
+      where: {
+        tenantId_sku: { tenantId, sku },
+      },
       include: { category: true },
     })
   }
 
   /**
-   * Update a product
+   * Update a product (tenant-scoped)
    */
-  static async update(id: string, data: UpdateProductInput) {
-    // Check if product exists
-    const existing = await prisma.product.findUnique({ where: { id } })
+  static async update(tenantId: string, id: string, data: UpdateProductInput) {
+    // Check if product exists in this tenant
+    const existing = await prisma.product.findFirst({
+      where: { id, tenantId },
+    })
+
     if (!existing) {
       throw new Error("Product not found")
     }
@@ -87,7 +107,9 @@ export class ProductService {
     // Check for SKU conflict if SKU is being updated
     if (data.sku && data.sku !== existing.sku) {
       const skuExists = await prisma.product.findUnique({
-        where: { sku: data.sku },
+        where: {
+          tenantId_sku: { tenantId, sku: data.sku },
+        },
       })
       if (skuExists) {
         throw new Error(`Product with SKU "${data.sku}" already exists`)
@@ -115,10 +137,13 @@ export class ProductService {
   }
 
   /**
-   * Soft delete a product (set isActive to false)
+   * Soft delete a product (tenant-scoped)
    */
-  static async delete(id: string) {
-    const existing = await prisma.product.findUnique({ where: { id } })
+  static async delete(tenantId: string, id: string) {
+    const existing = await prisma.product.findFirst({
+      where: { id, tenantId },
+    })
+
     if (!existing) {
       throw new Error("Product not found")
     }
@@ -130,9 +155,9 @@ export class ProductService {
   }
 
   /**
-   * List products with filtering, sorting, and pagination
+   * List products with filtering, sorting, and pagination (tenant-scoped)
    */
-  static async list(query: ProductSearchQuery) {
+  static async list(tenantId: string, query: ProductSearchQuery) {
     const {
       q: search,
       categoryId,
@@ -144,8 +169,9 @@ export class ProductService {
       sortOrder = "asc",
     } = query
 
-    // Build where clause
+    // Build where clause with tenant scope
     const where: Prisma.ProductWhereInput = {
+      tenantId, // CRITICAL: Always filter by tenant
       isActive,
       ...(categoryId && { categoryId }),
       ...(lowStock && {
@@ -184,26 +210,28 @@ export class ProductService {
   }
 
   /**
-   * Fast product search for autocomplete/POS
-   * Optimized for speed with limited fields
+   * Fast product search for autocomplete/POS (tenant-scoped)
    */
-  static async search(query: string, limit = 10) {
+  static async search(tenantId: string, query: string, limit = 10) {
     if (!query || query.length < 1) {
       return []
     }
 
     return prisma.product.findMany({
       where: {
+        tenantId, // CRITICAL: Always filter by tenant
         isActive: true,
         OR: [
           { name: { contains: query, mode: "insensitive" } },
           { sku: { startsWith: query, mode: "insensitive" } },
+          { barcode: { equals: query } }, // Exact match for barcode scans
         ],
       },
       select: {
         id: true,
         name: true,
         sku: true,
+        barcode: true,
         price: true,
         stock: true,
         unit: true,
@@ -216,11 +244,12 @@ export class ProductService {
   }
 
   /**
-   * Get low stock products
+   * Get low stock products (tenant-scoped)
    */
-  static async getLowStock(limit = 10) {
+  static async getLowStock(tenantId: string, limit = 10) {
     return prisma.product.findMany({
       where: {
+        tenantId, // CRITICAL: Always filter by tenant
         isActive: true,
         stock: { lte: prisma.product.fields.minStock },
       },
@@ -238,12 +267,11 @@ export class ProductService {
   }
 
   /**
-   * Adjust product stock
-   * Returns the updated product
+   * Adjust product stock (tenant-scoped)
    */
-  static async adjustStock(productId: string, quantity: number) {
-    const product = await prisma.product.findUnique({
-      where: { id: productId },
+  static async adjustStock(tenantId: string, productId: string, quantity: number) {
+    const product = await prisma.product.findFirst({
+      where: { id: productId, tenantId },
     })
 
     if (!product) {
@@ -262,11 +290,15 @@ export class ProductService {
   }
 
   /**
-   * Calculate total stock value
+   * Calculate total stock value (tenant-scoped)
    */
-  static async getStockValue() {
+  static async getStockValue(tenantId: string) {
     const products = await prisma.product.findMany({
-      where: { isActive: true, stock: { gt: 0 } },
+      where: {
+        tenantId, // CRITICAL: Always filter by tenant
+        isActive: true,
+        stock: { gt: 0 },
+      },
       select: {
         stock: true,
         costPrice: true,
@@ -283,10 +315,11 @@ export class ProductService {
   }
 
   /**
-   * Get all categories
+   * Get all categories (tenant-scoped)
    */
-  static async getCategories() {
+  static async getCategories(tenantId: string) {
     return prisma.category.findMany({
+      where: { tenantId }, // CRITICAL: Always filter by tenant
       orderBy: { name: "asc" },
       include: {
         _count: { select: { products: true } },
@@ -295,20 +328,31 @@ export class ProductService {
   }
 
   /**
-   * Create a category
+   * Create a category (tenant-scoped)
    */
-  static async createCategory(name: string, description?: string) {
+  static async createCategory(tenantId: string, name: string, description?: string) {
+    // Check for duplicate within tenant
+    const existing = await prisma.category.findUnique({
+      where: {
+        tenantId_name: { tenantId, name },
+      },
+    })
+
+    if (existing) {
+      throw new Error(`Category "${name}" already exists`)
+    }
+
     return prisma.category.create({
-      data: { name, description },
+      data: { tenantId, name, description },
     })
   }
 
   /**
-   * Delete a category (only if no products are linked)
+   * Delete a category (tenant-scoped)
    */
-  static async deleteCategory(id: string) {
-    const category = await prisma.category.findUnique({
-      where: { id },
+  static async deleteCategory(tenantId: string, id: string) {
+    const category = await prisma.category.findFirst({
+      where: { id, tenantId },
       include: { _count: { select: { products: true } } },
     })
 
@@ -323,6 +367,15 @@ export class ProductService {
     }
 
     return prisma.category.delete({ where: { id } })
+  }
+
+  /**
+   * Get product count for a tenant (for feature gating)
+   */
+  static async getProductCount(tenantId: string) {
+    return prisma.product.count({
+      where: { tenantId, isActive: true },
+    })
   }
 }
 

@@ -21,7 +21,10 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { Search, Plus, Bell, Settings, LogOut, User } from "lucide-react"
+import { Search, Plus, Settings, LogOut, User, Keyboard } from "lucide-react"
+import { TenantSwitcher } from "./tenant-switcher"
+import { NotificationBell } from "@/components/notifications/notification-bell"
+import { MobileMenuButton } from "./mobile-sidebar"
 
 export function Header() {
   const { data: session } = useSession()
@@ -42,26 +45,33 @@ export function Header() {
     .toUpperCase() || "U"
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-white px-6">
-      {/* Search */}
-      <form onSubmit={handleSearch} className="flex-1 max-w-md">
+    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-white px-4 lg:px-6">
+      {/* Mobile Menu Button + Tenant Switcher + Search */}
+      <div className="flex items-center gap-2 lg:gap-4 flex-1">
+        <MobileMenuButton />
+        <TenantSwitcher />
+        <form onSubmit={handleSearch} className="flex-1 max-w-md hidden sm:block">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <Input
             type="search"
             placeholder="Search transactions..."
-            className="pl-10 bg-slate-50 border-slate-200"
+            className="pl-10 pr-16 bg-slate-50 border-slate-200"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
+          <kbd className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 bg-slate-200 text-slate-500 rounded text-[10px] font-medium hidden lg:inline-flex">
+            ⌘K
+          </kbd>
         </div>
       </form>
+      </div>
 
       {/* Quick Actions */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 lg:gap-3">
         <Button
           onClick={() => router.push("/billing")}
-          className="bg-red-500 hover:bg-red-600"
+          className="bg-red-500 hover:bg-red-600 hidden sm:flex"
         >
           <Plus className="h-4 w-4 mr-1" />
           Add Sale
@@ -70,19 +80,33 @@ export function Header() {
         <Button
           variant="outline"
           onClick={() => router.push("/products/new")}
-          className="border-primary text-primary hover:bg-primary/5"
+          className="border-primary text-primary hover:bg-primary/5 hidden md:flex"
         >
           <Plus className="h-4 w-4 mr-1" />
           Add Item
         </Button>
 
-        {/* Notifications */}
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5 text-slate-600" />
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-medium text-white">
-            3
-          </span>
+        {/* Keyboard Shortcuts Hint */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="hidden lg:flex text-slate-400 hover:text-slate-600"
+          onClick={() => {
+            // Trigger the ? shortcut
+            const event = new KeyboardEvent("keydown", {
+              key: "?",
+              shiftKey: true,
+              bubbles: true,
+            })
+            document.dispatchEvent(event)
+          }}
+          title="Keyboard shortcuts (press ?)"
+        >
+          <Keyboard className="h-4 w-4" />
         </Button>
+
+        {/* Notifications */}
+        <NotificationBell />
 
         {/* User Menu */}
         <DropdownMenu>

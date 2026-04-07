@@ -12,6 +12,8 @@ A production-grade billing/POS application for retail businesses built with Next
 - **Party Management** - Customer and supplier tracking with balance management
 - **Dashboard** - Vyapar-style analytics with sales, receivables, and payables
 - **Settings** - Configurable business info, tax rates, and invoice preferences
+- **Mobile Responsive** - Optimized for tablets and mobile devices
+- **PWA Support** - Installable as a Progressive Web App with offline capabilities
 
 ## Tech Stack
 
@@ -122,6 +124,30 @@ Invoice items store product snapshots (name, SKU, price) at creation time. Chang
 ### GST Calculations
 
 Automatic CGST/SGST split for intrastate sales, IGST for interstate. Configurable per-product or default rates.
+
+### Progressive Web App (PWA)
+
+The app can be installed on mobile devices and desktops:
+- Install prompt appears after 30 seconds of use
+- Offline caching with service worker
+- App shortcuts for quick access to Sale, Invoices, and Products
+- Safe area support for notched devices
+
+### Keyboard Shortcuts
+
+Power user features for faster operation:
+- **Cmd/Ctrl + K** - Open command palette
+- **?** - Show all keyboard shortcuts
+- **G then H/B/P/I/A/R/S** - Navigate to different sections
+- **N then S/P/A** - Create new Sale/Product/Party
+- **F2/F3/F12** - Billing page quick actions
+- **/** - Focus search input
+
+### Barcode & QR Code Support
+
+- **Barcode Scanner** - Scan product barcodes using device camera for quick product lookup
+- **UPI QR Code** - Generate UPI payment QR codes for customer payments
+- **Product Barcodes** - Store and search products by barcode/EAN/UPC codes
 
 ## Available Scripts
 

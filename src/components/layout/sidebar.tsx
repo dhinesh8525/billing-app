@@ -21,13 +21,10 @@ import {
   Wallet,
   AlertTriangle,
   ChevronDown,
+  CreditCard,
+  ShieldCheck,
 } from "lucide-react"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 
 interface NavItem {
   title: string
@@ -72,6 +69,7 @@ const navItems: NavItem[] = [
       { title: "Sales Report", href: "/reports/sales" },
       { title: "Stock Report", href: "/reports/stock" },
       { title: "Party Report", href: "/reports/parties" },
+      { title: "Analytics", href: "/reports/analytics" },
     ],
   },
   {
@@ -80,10 +78,35 @@ const navItems: NavItem[] = [
     icon: <Wallet className="h-5 w-5" />,
   },
   {
+    title: "Subscription",
+    href: "/subscription",
+    icon: <CreditCard className="h-5 w-5" />,
+  },
+  {
     title: "Settings",
     href: "/settings",
     icon: <Settings className="h-5 w-5" />,
+    children: [
+      { title: "General", href: "/settings" },
+      { title: "Workspace", href: "/settings/workspace" },
+      { title: "Bill Format", href: "/settings/bill-format" },
+      { title: "Team", href: "/settings/team" },
+      { title: "API Keys", href: "/settings/api-keys" },
+      { title: "Notifications", href: "/notifications" },
+      { title: "Activity Log", href: "/settings/activity" },
+    ],
+  },
+  {
+    title: "Admin",
+    href: "/admin",
+    icon: <ShieldCheck className="h-5 w-5" />,
     adminOnly: true,
+    children: [
+      { title: "Dashboard", href: "/admin" },
+      { title: "Workspaces", href: "/admin/tenants" },
+      { title: "Plans", href: "/admin/plans" },
+      { title: "Audit Logs", href: "/admin/audit-logs" },
+    ],
   },
 ]
 
@@ -91,7 +114,42 @@ export function Sidebar() {
   const pathname = usePathname()
   const { data: session } = useSession()
   const isAdmin = session?.user?.role === "ADMIN"
-  const [openItems, setOpenItems] = useState<string[]>([])
+  const [openItems, setOpenItems] = useState<string[]>(() => {
+    // Initialize with items that have active children
+    const initialOpen: string[] = []
+    if (typeof window !== "undefined") {
+      const path = window.location.pathname
+      navItems.forEach((item) => {
+        if (item.children) {
+          const isChildActive = item.children.some(
+            (child) => path === child.href || path.startsWith(child.href + "/")
+          )
+          if (isChildActive) {
+            initialOpen.push(item.title)
+          }
+        }
+      })
+    }
+    return initialOpen
+  })
+
+  // Auto-open items when route changes
+  useEffect(() => {
+    setOpenItems((prev) => {
+      const newOpen = [...prev]
+      navItems.forEach((item) => {
+        if (item.children) {
+          const isChildActive = item.children.some(
+            (child) => pathname === child.href || pathname.startsWith(child.href + "/")
+          )
+          if (isChildActive && !newOpen.includes(item.title)) {
+            newOpen.push(item.title)
+          }
+        }
+      })
+      return newOpen
+    })
+  }, [pathname])
 
   const toggleItem = (title: string) => {
     setOpenItems((prev) =>
@@ -102,7 +160,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r bg-white">
+    <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r bg-white hidden lg:block">
       {/* Logo */}
       <div className="flex h-16 items-center border-b px-4">
         <Link href="/" className="flex items-center space-x-2">
@@ -120,16 +178,16 @@ export function Sidebar() {
           .map((item) => {
             const isActive =
               pathname === item.href ||
-              (item.children?.some((child) => pathname === child.href))
+              (item.href !== "/" && pathname.startsWith(item.href + "/")) ||
+              item.children?.some((child) => pathname === child.href)
+
+            const isOpen = openItems.includes(item.title)
 
             if (item.children) {
               return (
-                <Collapsible
-                  key={item.title}
-                  open={openItems.includes(item.title) || isActive}
-                  onOpenChange={() => toggleItem(item.title)}
-                >
-                  <CollapsibleTrigger
+                <div key={item.title}>
+                  <button
+                    onClick={() => toggleItem(item.title)}
                     className={cn(
                       "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                       isActive
@@ -143,28 +201,30 @@ export function Sidebar() {
                     </div>
                     <ChevronDown
                       className={cn(
-                        "h-4 w-4 transition-transform",
-                        openItems.includes(item.title) && "rotate-180"
+                        "h-4 w-4 transition-transform duration-200",
+                        isOpen && "rotate-180"
                       )}
                     />
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="pl-10 pt-1 space-y-1">
-                    {item.children.map((child) => (
-                      <Link
-                        key={child.href}
-                        href={child.href}
-                        className={cn(
-                          "block rounded-lg px-3 py-2 text-sm transition-colors",
-                          pathname === child.href
-                            ? "bg-primary/10 text-primary font-medium"
-                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                        )}
-                      >
-                        {child.title}
-                      </Link>
-                    ))}
-                  </CollapsibleContent>
-                </Collapsible>
+                  </button>
+                  {isOpen && (
+                    <div className="pl-10 pt-1 space-y-1">
+                      {item.children.map((child) => (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          className={cn(
+                            "block rounded-lg px-3 py-2 text-sm transition-colors",
+                            pathname === child.href
+                              ? "bg-primary/10 text-primary font-medium"
+                              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                          )}
+                        >
+                          {child.title}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )
             }
 

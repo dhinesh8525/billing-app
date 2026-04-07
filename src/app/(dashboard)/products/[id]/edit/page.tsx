@@ -1,8 +1,10 @@
 /**
  * Edit Product Page
+ * MULTI-TENANT: All data is scoped to the current tenant.
  */
 
 import { notFound } from "next/navigation"
+import { requireTenantContext } from "@/lib/tenant"
 import { ProductService } from "@/services"
 import { ProductForm } from "@/components/products/product-form"
 
@@ -11,11 +13,12 @@ interface EditProductPageProps {
 }
 
 export default async function EditProductPage({ params }: EditProductPageProps) {
+  const { tenantId } = await requireTenantContext()
   const { id } = await params
 
   let product
   try {
-    product = await ProductService.getById(id)
+    product = await ProductService.getById(tenantId, id)
   } catch {
     notFound()
   }

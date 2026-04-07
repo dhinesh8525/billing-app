@@ -2,6 +2,7 @@
  * Database Seed Script
  *
  * Populates the database with sample data for development and testing.
+ * MULTI-TENANT: Creates a default tenant and assigns all data to it.
  * Run with: npx prisma db seed
  */
 
@@ -13,6 +14,117 @@ const prisma = new PrismaClient()
 
 async function main() {
   console.log("🌱 Starting database seed...")
+
+  // ============================================================================
+  // TENANT & PLANS
+  // ============================================================================
+  console.log("Creating tenant and plans...")
+
+  // Get or create default tenant
+  let tenant = await prisma.tenant.findUnique({
+    where: { slug: "demo-store" },
+  })
+
+  if (!tenant) {
+    tenant = await prisma.tenant.create({
+      data: {
+        name: "Demo Billing Store",
+        slug: "demo-store",
+        email: "contact@demobilling.com",
+        isActive: true,
+      },
+    })
+  }
+
+  // Create plans if they don't exist
+  const plans = await Promise.all([
+    prisma.plan.upsert({
+      where: { slug: "free" },
+      update: {},
+      create: {
+        name: "Free",
+        slug: "free",
+        price: 0,
+        billingInterval: "MONTHLY",
+        features: {
+          maxProducts: 50,
+          maxInvoices: 100,
+          maxUsers: 1,
+          maxParties: 25,
+          reports: false,
+          multiLocation: false,
+          api: false,
+        },
+        isActive: true,
+      },
+    }),
+    prisma.plan.upsert({
+      where: { slug: "pro" },
+      update: {},
+      create: {
+        name: "Pro",
+        slug: "pro",
+        price: 999,
+        billingInterval: "MONTHLY",
+        features: {
+          maxProducts: 500,
+          maxInvoices: 1000,
+          maxUsers: 5,
+          maxParties: 250,
+          reports: true,
+          multiLocation: false,
+          api: true,
+        },
+        isActive: true,
+      },
+    }),
+    prisma.plan.upsert({
+      where: { slug: "enterprise" },
+      update: {},
+      create: {
+        name: "Enterprise",
+        slug: "enterprise",
+        price: 2999,
+        billingInterval: "MONTHLY",
+        features: {
+          maxProducts: -1,
+          maxInvoices: -1,
+          maxUsers: -1,
+          maxParties: -1,
+          reports: true,
+          multiLocation: true,
+          api: true,
+        },
+        isActive: true,
+      },
+    }),
+  ])
+
+  // Create subscription for tenant
+  const freePlan = plans.find((p) => p.slug === "free")
+  if (freePlan) {
+    const existingSubscription = await prisma.subscription.findUnique({
+      where: { tenantId: tenant.id },
+    })
+
+    if (!existingSubscription) {
+      const now = new Date()
+      const trialEnd = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000)
+
+      await prisma.subscription.create({
+        data: {
+          tenantId: tenant.id,
+          planId: freePlan.id,
+          status: "TRIALING",
+          trialEndsAt: trialEnd,
+          currentPeriodStart: now,
+          currentPeriodEnd: trialEnd,
+        },
+      })
+    }
+  }
+
+  console.log(`✅ Created tenant: ${tenant.name} (${tenant.slug})`)
 
   // ============================================================================
   // USERS
@@ -44,38 +156,61 @@ async function main() {
     },
   })
 
+  // Create tenant memberships
+  await prisma.tenantMembership.upsert({
+    where: { userId_tenantId: { userId: admin.id, tenantId: tenant.id } },
+    update: {},
+    create: {
+      userId: admin.id,
+      tenantId: tenant.id,
+      role: "OWNER",
+      isDefault: true,
+    },
+  })
+
+  await prisma.tenantMembership.upsert({
+    where: { userId_tenantId: { userId: staff.id, tenantId: tenant.id } },
+    update: {},
+    create: {
+      userId: staff.id,
+      tenantId: tenant.id,
+      role: "MEMBER",
+      isDefault: true,
+    },
+  })
+
   console.log(`✅ Created users: ${admin.email}, ${staff.email}`)
 
   // ============================================================================
-  // CATEGORIES
+  // CATEGORIES (tenant-scoped)
   // ============================================================================
   console.log("Creating categories...")
 
   const categories = await Promise.all([
     prisma.category.upsert({
-      where: { name: "Electronics" },
+      where: { tenantId_name: { tenantId: tenant.id, name: "Electronics" } },
       update: {},
-      create: { name: "Electronics", description: "Electronic devices and accessories" },
+      create: { tenantId: tenant.id, name: "Electronics", description: "Electronic devices and accessories" },
     }),
     prisma.category.upsert({
-      where: { name: "Groceries" },
+      where: { tenantId_name: { tenantId: tenant.id, name: "Groceries" } },
       update: {},
-      create: { name: "Groceries", description: "Food and household essentials" },
+      create: { tenantId: tenant.id, name: "Groceries", description: "Food and household essentials" },
     }),
     prisma.category.upsert({
-      where: { name: "Clothing" },
+      where: { tenantId_name: { tenantId: tenant.id, name: "Clothing" } },
       update: {},
-      create: { name: "Clothing", description: "Apparel and fashion items" },
+      create: { tenantId: tenant.id, name: "Clothing", description: "Apparel and fashion items" },
     }),
     prisma.category.upsert({
-      where: { name: "Home & Garden" },
+      where: { tenantId_name: { tenantId: tenant.id, name: "Home & Garden" } },
       update: {},
-      create: { name: "Home & Garden", description: "Home improvement and garden supplies" },
+      create: { tenantId: tenant.id, name: "Home & Garden", description: "Home improvement and garden supplies" },
     }),
     prisma.category.upsert({
-      where: { name: "Office Supplies" },
+      where: { tenantId_name: { tenantId: tenant.id, name: "Office Supplies" } },
       update: {},
-      create: { name: "Office Supplies", description: "Stationery and office equipment" },
+      create: { tenantId: tenant.id, name: "Office Supplies", description: "Stationery and office equipment" },
     }),
   ])
 
@@ -83,7 +218,7 @@ async function main() {
   console.log(`✅ Created ${categories.length} categories`)
 
   // ============================================================================
-  // PRODUCTS
+  // PRODUCTS (tenant-scoped)
   // ============================================================================
   console.log("Creating products...")
 
@@ -121,16 +256,16 @@ async function main() {
 
   for (const product of productsData) {
     await prisma.product.upsert({
-      where: { sku: product.sku },
+      where: { tenantId_sku: { tenantId: tenant.id, sku: product.sku } },
       update: {},
-      create: product,
+      create: { tenantId: tenant.id, ...product },
     })
   }
 
   console.log(`✅ Created ${productsData.length} products`)
 
   // ============================================================================
-  // PARTIES (Customers/Suppliers)
+  // PARTIES (Customers/Suppliers) (tenant-scoped)
   // ============================================================================
   console.log("Creating parties...")
 
@@ -139,6 +274,7 @@ async function main() {
       where: { phone: "9876543210" },
       update: {},
       create: {
+        tenantId: tenant.id,
         name: "Ramesh Kumar",
         phone: "9876543210",
         email: "ramesh@example.com",
@@ -151,6 +287,7 @@ async function main() {
       where: { phone: "9876543211" },
       update: {},
       create: {
+        tenantId: tenant.id,
         name: "Suresh Traders",
         phone: "9876543211",
         email: "suresh.traders@example.com",
@@ -166,6 +303,7 @@ async function main() {
       where: { phone: "9876543212" },
       update: {},
       create: {
+        tenantId: tenant.id,
         name: "Priya Electronics",
         phone: "9876543212",
         email: "priya.electronics@example.com",
@@ -182,7 +320,7 @@ async function main() {
   console.log(`✅ Created ${parties.length} parties`)
 
   // ============================================================================
-  // SETTINGS
+  // SETTINGS (tenant-scoped)
   // ============================================================================
   console.log("Creating settings...")
 
@@ -224,118 +362,151 @@ async function main() {
   ]
 
   for (const setting of settingsData) {
-    await prisma.settings.upsert({
-      where: { key: setting.key },
-      update: { value: setting.value },
-      create: setting,
+    const existing = await prisma.settings.findFirst({
+      where: { tenantId: tenant.id, key: setting.key },
     })
+
+    if (existing) {
+      await prisma.settings.update({
+        where: { id: existing.id },
+        data: { value: setting.value },
+      })
+    } else {
+      await prisma.settings.create({
+        data: { tenantId: tenant.id, key: setting.key, value: setting.value },
+      })
+    }
   }
 
   console.log(`✅ Created ${settingsData.length} settings`)
 
   // ============================================================================
-  // BANK ACCOUNTS
+  // BANK ACCOUNTS (tenant-scoped)
   // ============================================================================
   console.log("Creating bank accounts...")
 
-  const bankAccounts = await Promise.all([
-    prisma.bankAccount.create({
-      data: {
-        name: "Cash in Hand",
-        type: "cash",
-        balance: 35400,
-        isDefault: true,
-      },
-    }),
-    prisma.bankAccount.create({
-      data: {
-        name: "HDFC Bank Account",
-        accountNumber: "1234567890",
-        bankName: "HDFC Bank",
-        ifsc: "HDFC0001234",
-        type: "bank",
-        balance: 1742445,
-      },
-    }),
-    prisma.bankAccount.create({
-      data: {
-        name: "UPI - PhonePe",
-        upiId: "business@ybl",
-        type: "upi",
-        balance: 0,
-      },
-    }),
-  ])
+  const existingBankAccounts = await prisma.bankAccount.count({
+    where: { tenantId: tenant.id },
+  })
 
-  console.log(`✅ Created ${bankAccounts.length} bank accounts`)
+  if (existingBankAccounts === 0) {
+    const bankAccounts = await Promise.all([
+      prisma.bankAccount.create({
+        data: {
+          tenantId: tenant.id,
+          name: "Cash in Hand",
+          type: "cash",
+          balance: 35400,
+          isDefault: true,
+        },
+      }),
+      prisma.bankAccount.create({
+        data: {
+          tenantId: tenant.id,
+          name: "HDFC Bank Account",
+          accountNumber: "1234567890",
+          bankName: "HDFC Bank",
+          ifsc: "HDFC0001234",
+          type: "bank",
+          balance: 1742445,
+        },
+      }),
+      prisma.bankAccount.create({
+        data: {
+          tenantId: tenant.id,
+          name: "UPI - PhonePe",
+          upiId: "business@ybl",
+          type: "upi",
+          balance: 0,
+        },
+      }),
+    ])
+
+    console.log(`✅ Created ${bankAccounts.length} bank accounts`)
+  } else {
+    console.log(`✅ Bank accounts already exist`)
+  }
 
   // ============================================================================
-  // SAMPLE INVOICE
+  // SAMPLE INVOICE (tenant-scoped)
   // ============================================================================
   console.log("Creating sample invoice...")
 
-  const products = await prisma.product.findMany({ take: 3 })
+  const existingInvoice = await prisma.invoice.findFirst({
+    where: { tenantId: tenant.id, invoiceNumber: "INV-202604-0001" },
+  })
 
-  if (products.length >= 3) {
-    const invoiceItems = products.map((p, index) => ({
-      productId: p.id,
-      productName: p.name,
-      productSku: p.sku,
-      hsn: p.hsn,
-      unit: p.unit,
-      unitPrice: p.price,
-      quantity: index + 1,
-      taxRate: p.taxRate || new Decimal(18),
-      taxAmount: p.price.mul(p.taxRate || 18).div(100).mul(index + 1),
-      discount: new Decimal(0),
-      lineTotal: p.price.mul(index + 1).mul(1 + (p.taxRate?.toNumber() || 18) / 100),
-    }))
-
-    const subtotal = invoiceItems.reduce(
-      (sum, item) => sum.plus(item.unitPrice.mul(item.quantity)),
-      new Decimal(0)
-    )
-    const taxAmount = invoiceItems.reduce(
-      (sum, item) => sum.plus(item.taxAmount),
-      new Decimal(0)
-    )
-    const total = subtotal.plus(taxAmount)
-    const roundedTotal = Math.round(total.toNumber())
-    const roundOff = new Decimal(roundedTotal).minus(total)
-
-    await prisma.invoice.create({
-      data: {
-        invoiceNumber: "INV-202604-0001",
-        type: TransactionType.SALE,
-        status: InvoiceStatus.COMPLETED,
-        partyId: parties[0].id,
-        subtotal,
-        taxRate: new Decimal(18),
-        cgst: taxAmount.div(2),
-        sgst: taxAmount.div(2),
-        igst: new Decimal(0),
-        taxAmount,
-        discountPercent: new Decimal(0),
-        discountAmount: new Decimal(0),
-        roundOff,
-        total: new Decimal(roundedTotal),
-        amountPaid: new Decimal(roundedTotal),
-        paymentMode: "cash",
-        paymentStatus: "paid",
-        createdById: staff.id,
-        items: {
-          create: invoiceItems,
-        },
-      },
+  if (!existingInvoice) {
+    const products = await prisma.product.findMany({
+      where: { tenantId: tenant.id },
+      take: 3,
     })
 
-    console.log("✅ Created sample invoice: INV-202604-0001")
+    if (products.length >= 3) {
+      const invoiceItems = products.map((p, index) => ({
+        productId: p.id,
+        productName: p.name,
+        productSku: p.sku,
+        hsn: p.hsn,
+        unit: p.unit,
+        unitPrice: p.price,
+        quantity: index + 1,
+        taxRate: p.taxRate || new Decimal(18),
+        taxAmount: p.price.mul(p.taxRate || 18).div(100).mul(index + 1),
+        discount: new Decimal(0),
+        lineTotal: p.price.mul(index + 1).mul(1 + (p.taxRate?.toNumber() || 18) / 100),
+      }))
+
+      const subtotal = invoiceItems.reduce(
+        (sum, item) => sum.plus(item.unitPrice.mul(item.quantity)),
+        new Decimal(0)
+      )
+      const taxAmount = invoiceItems.reduce(
+        (sum, item) => sum.plus(item.taxAmount),
+        new Decimal(0)
+      )
+      const total = subtotal.plus(taxAmount)
+      const roundedTotal = Math.round(total.toNumber())
+      const roundOff = new Decimal(roundedTotal).minus(total)
+
+      await prisma.invoice.create({
+        data: {
+          tenantId: tenant.id,
+          invoiceNumber: "INV-202604-0001",
+          type: TransactionType.SALE,
+          status: InvoiceStatus.COMPLETED,
+          partyId: parties[0].id,
+          subtotal,
+          taxRate: new Decimal(18),
+          cgst: taxAmount.div(2),
+          sgst: taxAmount.div(2),
+          igst: new Decimal(0),
+          taxAmount,
+          discountPercent: new Decimal(0),
+          discountAmount: new Decimal(0),
+          roundOff,
+          total: new Decimal(roundedTotal),
+          amountPaid: new Decimal(roundedTotal),
+          paymentMode: "cash",
+          paymentStatus: "paid",
+          createdById: staff.id,
+          items: {
+            create: invoiceItems,
+          },
+        },
+      })
+
+      console.log("✅ Created sample invoice: INV-202604-0001")
+    }
+  } else {
+    console.log("✅ Sample invoice already exists")
   }
 
   console.log("\n✨ Database seeding completed!")
   console.log("\n📋 Login credentials:")
   console.log("   Admin: admin@billing.local / Admin123!")
   console.log("   Staff: staff@billing.local / Staff123!")
+  console.log(`\n🏢 Tenant: ${tenant.name} (${tenant.slug})`)
 }
 
 main()

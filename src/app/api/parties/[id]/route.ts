@@ -1,9 +1,9 @@
 /**
  * Party by ID API Route
  *
- * GET /api/parties/[id] - Get a party by ID
- * PUT /api/parties/[id] - Update a party
- * DELETE /api/parties/[id] - Delete a party
+ * GET /api/parties/[id] - Get a party by ID (tenant-scoped)
+ * PUT /api/parties/[id] - Update a party (tenant-scoped)
+ * DELETE /api/parties/[id] - Delete a party (tenant-scoped, admin only)
  */
 
 import { NextRequest } from "next/server"
@@ -13,8 +13,9 @@ import {
   apiResponse,
   handleApiError,
   parseBody,
-  requireAuth,
-} from "@/lib/api-utils"
+  requireTenant,
+  requireTenantAdmin,
+} from "@/lib/api-utils-tenant"
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -22,10 +23,10 @@ interface RouteParams {
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    await requireAuth()
+    const { tenantId } = await requireTenant()
     const { id } = await params
 
-    const party = await PartyService.getById(id)
+    const party = await PartyService.getById(tenantId, id)
 
     return apiResponse(party)
   } catch (error) {
@@ -35,11 +36,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
-    await requireAuth()
+    const { tenantId } = await requireTenant()
     const { id } = await params
 
     const body = await parseBody(request, updatePartySchema)
-    const party = await PartyService.update(id, body)
+    const party = await PartyService.update(tenantId, id, body)
 
     return apiResponse(party)
   } catch (error) {
@@ -49,10 +50,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
-    await requireAuth()
+    const { tenantId } = await requireTenantAdmin()
     const { id } = await params
 
-    const result = await PartyService.delete(id)
+    const result = await PartyService.delete(tenantId, id)
 
     return apiResponse({ message: "Party deleted", party: result })
   } catch (error) {

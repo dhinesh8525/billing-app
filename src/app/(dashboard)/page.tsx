@@ -3,10 +3,12 @@
  *
  * Main dashboard with sales overview, stats, and quick access cards.
  * Vyapar-style layout with summary cards and charts.
+ * MULTI-TENANT: All data is scoped to the current tenant.
  */
 
 import { Suspense } from "react"
 import { getSession } from "@/lib/auth"
+import { requireTenantContext } from "@/lib/tenant"
 import { BillingService, ProductService, PartyService } from "@/services"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import {
@@ -28,17 +30,24 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { SalesChart } from "@/components/dashboard/sales-chart"
+import { QuickActions } from "@/components/dashboard/quick-actions"
+import { AlertsWidget } from "@/components/dashboard/alerts-widget"
+import { UsageWidget } from "@/components/dashboard/usage-widget"
+import { PaymentDueWidget } from "@/components/dashboard/payment-due-widget"
+import { BusinessInsights } from "@/components/dashboard/business-insights"
 
 async function DashboardStats() {
+  const { tenantId } = await requireTenantContext()
+
   const [stats, lowStock, receivables, _payables, stockValue, recentTransactions, monthlySales] =
     await Promise.all([
-      BillingService.getDashboardStats(),
-      ProductService.getLowStock(5),
-      PartyService.getReceivables(5),
-      PartyService.getPayables(5),
-      ProductService.getStockValue(),
-      BillingService.getRecentTransactions(5),
-      BillingService.getMonthlySales(12),
+      BillingService.getDashboardStats(tenantId),
+      ProductService.getLowStock(tenantId, 5),
+      PartyService.getReceivables(tenantId, 5),
+      PartyService.getPayables(tenantId, 5),
+      ProductService.getStockValue(tenantId),
+      BillingService.getRecentTransactions(tenantId, 5),
+      BillingService.getMonthlySales(tenantId, 12),
     ])
 
   return (
@@ -69,16 +78,34 @@ async function DashboardStats() {
             <CardTitle className="text-sm font-medium text-slate-600">
               This Month Sale
             </CardTitle>
-            <Badge variant="secondary" className="bg-emerald-100 text-emerald-700">
-              +12%
-            </Badge>
+            {stats.salesGrowth !== 0 && (
+              <Badge
+                variant="secondary"
+                className={
+                  stats.salesGrowth > 0
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-red-100 text-red-700"
+                }
+              >
+                {stats.salesGrowth > 0 ? "+" : ""}
+                {stats.salesGrowth.toFixed(1)}%
+              </Badge>
+            )}
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-slate-900">
               {formatCurrency(stats.totalSales)}
             </div>
-            <div className="flex items-center text-xs text-emerald-600 mt-1">
-              <ArrowUpRight className="h-3 w-3 mr-1" />
+            <div
+              className={`flex items-center text-xs mt-1 ${
+                stats.salesGrowth >= 0 ? "text-emerald-600" : "text-red-600"
+              }`}
+            >
+              {stats.salesGrowth >= 0 ? (
+                <ArrowUpRight className="h-3 w-3 mr-1" />
+              ) : (
+                <ArrowDownRight className="h-3 w-3 mr-1" />
+              )}
               vs last month
             </div>
           </CardContent>
@@ -195,8 +222,8 @@ async function DashboardStats() {
         </Card>
       </div>
 
-      {/* Third Row - Receivables and Recent Transactions */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 mt-6">
+      {/* Third Row - Receivables, Recent Transactions, and Widgets */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mt-6">
         {/* Receivables */}
         <Card>
           <CardHeader>
@@ -278,6 +305,19 @@ async function DashboardStats() {
             </Link>
           </CardContent>
         </Card>
+
+        {/* Payment Due Widget */}
+        <PaymentDueWidget tenantId={tenantId} />
+
+        {/* Business Insights */}
+        <BusinessInsights tenantId={tenantId} />
+      </div>
+
+      {/* Fourth Row - Client-side Widgets */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 mt-6">
+        <QuickActions />
+        <AlertsWidget />
+        <UsageWidget />
       </div>
     </>
   )

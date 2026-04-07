@@ -2,10 +2,12 @@
  * Parties List Page
  *
  * Displays all customers and suppliers with balances.
+ * MULTI-TENANT: All data is scoped to the current tenant.
  */
 
 import { Suspense } from "react"
 import Link from "next/link"
+import { requireTenantContext } from "@/lib/tenant"
 import { PartyService } from "@/services"
 import { formatCurrency } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -53,8 +55,9 @@ async function PartiesTable({
 }: {
   searchParams: PartiesPageProps["searchParams"]
 }) {
+  const { tenantId } = await requireTenantContext()
   const params = await searchParams
-  const result = await PartyService.list({
+  const result = await PartyService.list(tenantId, {
     search: params.search,
     type: params.type as "customer" | "supplier" | "both" | undefined,
     hasBalance: params.hasBalance === "true",

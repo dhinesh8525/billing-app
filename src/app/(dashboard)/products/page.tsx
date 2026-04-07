@@ -2,10 +2,12 @@
  * Products List Page
  *
  * Displays all products with filtering, search, and CRUD operations.
+ * MULTI-TENANT: All data is scoped to the current tenant.
  */
 
 import { Suspense } from "react"
 import Link from "next/link"
+import { requireTenantContext } from "@/lib/tenant"
 import { ProductService } from "@/services"
 import { formatCurrency } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -31,6 +33,7 @@ import {
   AlertTriangle,
 } from "lucide-react"
 import { ProductActions } from "@/components/products/product-actions"
+import { ExportButton } from "@/components/export-button"
 
 interface ProductsPageProps {
   searchParams: Promise<{
@@ -42,8 +45,9 @@ interface ProductsPageProps {
 }
 
 async function ProductsTable({ searchParams }: { searchParams: ProductsPageProps["searchParams"] }) {
+  const { tenantId } = await requireTenantContext()
   const params = await searchParams
-  const result = await ProductService.list({
+  const result = await ProductService.list(tenantId, {
     q: params.q,
     categoryId: params.categoryId,
     lowStock: params.lowStock === "true",
@@ -53,7 +57,7 @@ async function ProductsTable({ searchParams }: { searchParams: ProductsPageProps
     sortOrder: "asc",
   })
 
-  await ProductService.getCategories()
+  await ProductService.getCategories(tenantId)
 
   if (result.data.length === 0) {
     return (
@@ -283,6 +287,7 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
                   Low Stock
                 </Link>
               </Button>
+              <ExportButton type="products" label="Export CSV" />
             </div>
           </div>
         </CardHeader>

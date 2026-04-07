@@ -3,6 +3,9 @@
  *
  * Core business logic for invoice creation with atomic stock management.
  * Implements the snapshot pattern for invoice immutability.
+ *
+ * MULTI-TENANT: All operations are scoped to tenantId
+ * FEATURE GATED: Invoice creation respects plan limits
  */
 
 import { prisma } from "@/lib/db"
@@ -10,13 +13,16 @@ import { Prisma, TransactionType, InvoiceStatus } from "@prisma/client"
 import { Decimal } from "decimal.js"
 import { CreateInvoiceInput, InvoiceQuery } from "@/validations/invoice.schema"
 import { calculateGST, roundOff, generateInvoiceNumber } from "@/lib/utils"
+import { canCreateInvoice } from "@/lib/feature-gate"
 
 /**
  * Billing Service class with static methods for invoice operations
+ * All methods require tenantId for multi-tenant isolation
  */
 export class BillingService {
   /**
    * Create a new invoice with atomic stock management
+   * FEATURE GATED: Checks plan limit before creation
    *
    * This method uses a transaction with serializable isolation to:
    * 1. Verify stock availability
@@ -24,12 +30,19 @@ export class BillingService {
    * 3. Create invoice with product snapshots
    * 4. Update party balance if applicable
    */
-  static async createInvoice(data: CreateInvoiceInput, userId: string) {
+  static async createInvoice(tenantId: string, data: CreateInvoiceInput, userId: string) {
+    // Check plan limits before starting transaction
+    const limitCheck = await canCreateInvoice(tenantId)
+    if (!limitCheck.allowed) {
+      throw new Error(limitCheck.reason || "Invoice limit reached. Please upgrade your plan.")
+    }
+
     return prisma.$transaction(
       async (tx) => {
-        // 1. Get next invoice number
+        // 1. Get next invoice number (tenant-scoped)
         const invoiceCount = await tx.invoice.count({
           where: {
+            tenantId, // CRITICAL: Always filter by tenant
             type: data.type || TransactionType.SALE,
             invoiceDate: {
               gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
@@ -46,10 +59,10 @@ export class BillingService {
 
         const invoiceNumber = generateInvoiceNumber(invoiceCount + 1, prefix)
 
-        // 2. Fetch products and verify stock
+        // 2. Fetch products and verify stock (tenant-scoped)
         const productIds = data.items.map((item) => item.productId)
         const products = await tx.product.findMany({
-          where: { id: { in: productIds } },
+          where: { id: { in: productIds }, tenantId }, // CRITICAL: Always filter by tenant
         })
 
         const productMap = new Map(products.map((p) => [p.id, p]))
@@ -111,12 +124,13 @@ export class BillingService {
             lineTotal,
           })
 
-          // 4. Atomically update stock with verification
+          // 4. Atomically update stock with verification (tenant-scoped)
           if (data.type === TransactionType.SALE) {
             // Decrement stock for sales
             const updated = await tx.product.updateMany({
               where: {
                 id: product.id,
+                tenantId, // CRITICAL: Always filter by tenant
                 stock: { gte: item.quantity }, // Double-check in WHERE
               },
               data: {
@@ -130,9 +144,9 @@ export class BillingService {
               )
             }
           } else if (data.type === TransactionType.PURCHASE) {
-            // Increment stock for purchases
-            await tx.product.update({
-              where: { id: product.id },
+            // Increment stock for purchases (tenant-scoped)
+            await tx.product.updateMany({
+              where: { id: product.id, tenantId }, // CRITICAL: Always filter by tenant
               data: { stock: { increment: item.quantity } },
             })
           }
@@ -166,9 +180,10 @@ export class BillingService {
             ? "partial"
             : "unpaid"
 
-        // 6. Create invoice
+        // 6. Create invoice (tenant-scoped)
         const invoice = await tx.invoice.create({
           data: {
+            tenantId, // CRITICAL: Always include tenant
             invoiceNumber,
             type: data.type || TransactionType.SALE,
             status: InvoiceStatus.COMPLETED,
@@ -206,7 +221,7 @@ export class BillingService {
           },
         })
 
-        // 7. Update party balance if linked
+        // 7. Update party balance if linked (tenant-scoped)
         if (data.partyId) {
           const balanceChange =
             data.type === TransactionType.SALE
@@ -216,8 +231,8 @@ export class BillingService {
               : new Decimal(0)
 
           if (!balanceChange.isZero()) {
-            await tx.party.update({
-              where: { id: data.partyId },
+            await tx.party.updateMany({
+              where: { id: data.partyId, tenantId }, // CRITICAL: Always filter by tenant
               data: {
                 currentBalance: {
                   increment: balanceChange.toNumber(),
@@ -238,11 +253,11 @@ export class BillingService {
   }
 
   /**
-   * Get invoice by ID with all related data
+   * Get invoice by ID with all related data (tenant-scoped)
    */
-  static async getById(id: string) {
-    const invoice = await prisma.invoice.findUnique({
-      where: { id },
+  static async getById(tenantId: string, id: string) {
+    const invoice = await prisma.invoice.findFirst({
+      where: { id, tenantId }, // CRITICAL: Always filter by tenant
       include: {
         items: true,
         party: true,
@@ -260,11 +275,11 @@ export class BillingService {
   }
 
   /**
-   * Get invoice by invoice number
+   * Get invoice by invoice number (tenant-scoped)
    */
-  static async getByNumber(invoiceNumber: string) {
-    return prisma.invoice.findUnique({
-      where: { invoiceNumber },
+  static async getByNumber(tenantId: string, invoiceNumber: string) {
+    return prisma.invoice.findFirst({
+      where: { invoiceNumber, tenantId }, // CRITICAL: Always filter by tenant
       include: {
         items: true,
         party: true,
@@ -276,9 +291,9 @@ export class BillingService {
   }
 
   /**
-   * List invoices with filtering and pagination
+   * List invoices with filtering and pagination (tenant-scoped)
    */
-  static async list(query: InvoiceQuery) {
+  static async list(tenantId: string, query: InvoiceQuery) {
     const {
       type,
       status,
@@ -294,6 +309,7 @@ export class BillingService {
     } = query
 
     const where: Prisma.InvoiceWhereInput = {
+      tenantId, // CRITICAL: Always filter by tenant
       ...(type && { type }),
       ...(status && { status }),
       ...(paymentStatus && { paymentStatus }),
@@ -341,12 +357,12 @@ export class BillingService {
   }
 
   /**
-   * Cancel an invoice and restore stock
+   * Cancel an invoice and restore stock (tenant-scoped)
    */
-  static async cancel(id: string, _userId: string) {
+  static async cancel(tenantId: string, id: string, _userId: string) {
     return prisma.$transaction(async (tx) => {
-      const invoice = await tx.invoice.findUnique({
-        where: { id },
+      const invoice = await tx.invoice.findFirst({
+        where: { id, tenantId }, // CRITICAL: Always filter by tenant
         include: { items: true },
       })
 
@@ -358,22 +374,22 @@ export class BillingService {
         throw new Error("Invoice is already cancelled")
       }
 
-      // Restore stock for sales, decrement for purchases
+      // Restore stock for sales, decrement for purchases (tenant-scoped)
       for (const item of invoice.items) {
         if (invoice.type === TransactionType.SALE) {
-          await tx.product.update({
-            where: { id: item.productId },
+          await tx.product.updateMany({
+            where: { id: item.productId, tenantId }, // CRITICAL: Always filter by tenant
             data: { stock: { increment: item.quantity } },
           })
         } else if (invoice.type === TransactionType.PURCHASE) {
-          await tx.product.update({
-            where: { id: item.productId },
+          await tx.product.updateMany({
+            where: { id: item.productId, tenantId }, // CRITICAL: Always filter by tenant
             data: { stock: { decrement: item.quantity } },
           })
         }
       }
 
-      // Reverse party balance if applicable
+      // Reverse party balance if applicable (tenant-scoped)
       if (invoice.partyId) {
         const balanceReverse =
           invoice.type === TransactionType.SALE
@@ -381,8 +397,8 @@ export class BillingService {
             : invoice.amountPaid.toNumber() - invoice.total.toNumber()
 
         if (balanceReverse !== 0) {
-          await tx.party.update({
-            where: { id: invoice.partyId },
+          await tx.party.updateMany({
+            where: { id: invoice.partyId, tenantId }, // CRITICAL: Always filter by tenant
             data: {
               currentBalance: { decrement: balanceReverse },
             },
@@ -391,9 +407,17 @@ export class BillingService {
       }
 
       // Update invoice status
-      return tx.invoice.update({
-        where: { id },
+      const updated = await tx.invoice.updateMany({
+        where: { id, tenantId }, // CRITICAL: Always filter by tenant
         data: { status: InvoiceStatus.CANCELLED },
+      })
+
+      if (updated.count === 0) {
+        throw new Error("Invoice not found")
+      }
+
+      return tx.invoice.findFirst({
+        where: { id, tenantId },
         include: {
           items: true,
           party: true,
@@ -403,16 +427,17 @@ export class BillingService {
   }
 
   /**
-   * Record a payment against an invoice
+   * Record a payment against an invoice (tenant-scoped)
    */
   static async recordPayment(
+    tenantId: string,
     invoiceId: string,
     amount: number,
     paymentMode: string
   ) {
     return prisma.$transaction(async (tx) => {
-      const invoice = await tx.invoice.findUnique({
-        where: { id: invoiceId },
+      const invoice = await tx.invoice.findFirst({
+        where: { id: invoiceId, tenantId }, // CRITICAL: Always filter by tenant
       })
 
       if (!invoice) {
@@ -435,9 +460,9 @@ export class BillingService {
 
       const paymentStatus = newPaid >= total ? "paid" : "partial"
 
-      // Update invoice
-      const updated = await tx.invoice.update({
-        where: { id: invoiceId },
+      // Update invoice (tenant-scoped)
+      await tx.invoice.updateMany({
+        where: { id: invoiceId, tenantId }, // CRITICAL: Always filter by tenant
         data: {
           amountPaid: newPaid,
           paymentMode,
@@ -445,27 +470,35 @@ export class BillingService {
         },
       })
 
-      // Update party balance
+      // Update party balance (tenant-scoped)
       if (invoice.partyId) {
-        await tx.party.update({
-          where: { id: invoice.partyId },
+        await tx.party.updateMany({
+          where: { id: invoice.partyId, tenantId }, // CRITICAL: Always filter by tenant
           data: {
             currentBalance: { decrement: amount },
           },
         })
       }
 
-      return updated
+      return tx.invoice.findFirst({
+        where: { id: invoiceId, tenantId },
+      })
     })
   }
 
   /**
-   * Get dashboard statistics
+   * Get dashboard statistics (tenant-scoped)
    */
-  static async getDashboardStats(startDate?: Date, endDate?: Date) {
+  static async getDashboardStats(tenantId: string, startDate?: Date, endDate?: Date) {
     const dateFilter = startDate && endDate
       ? { invoiceDate: { gte: startDate, lte: endDate } }
       : {}
+
+    // Calculate date ranges for month-over-month comparison
+    const today = new Date()
+    const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+    const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+    const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0)
 
     const [
       salesResult,
@@ -474,44 +507,51 @@ export class BillingService {
       payables,
       todaySales,
       todayTransactions,
+      lastMonthSales,
     ] = await Promise.all([
-      // Total sales
+      // Total sales (tenant-scoped) - this month
       prisma.invoice.aggregate({
         where: {
+          tenantId, // CRITICAL: Always filter by tenant
           type: TransactionType.SALE,
           status: InvoiceStatus.COMPLETED,
+          invoiceDate: { gte: thisMonthStart },
           ...dateFilter,
         },
         _sum: { total: true },
       }),
-      // Total purchases
+      // Total purchases (tenant-scoped)
       prisma.invoice.aggregate({
         where: {
+          tenantId, // CRITICAL: Always filter by tenant
           type: TransactionType.PURCHASE,
           status: InvoiceStatus.COMPLETED,
           ...dateFilter,
         },
         _sum: { total: true },
       }),
-      // Receivables (customers who owe)
+      // Receivables (customers who owe) (tenant-scoped)
       prisma.party.aggregate({
         where: {
+          tenantId, // CRITICAL: Always filter by tenant
           type: { in: ["customer", "both"] },
           currentBalance: { gt: 0 },
         },
         _sum: { currentBalance: true },
       }),
-      // Payables (we owe suppliers)
+      // Payables (we owe suppliers) (tenant-scoped)
       prisma.party.aggregate({
         where: {
+          tenantId, // CRITICAL: Always filter by tenant
           type: { in: ["supplier", "both"] },
           currentBalance: { lt: 0 },
         },
         _sum: { currentBalance: true },
       }),
-      // Today's sales
+      // Today's sales (tenant-scoped)
       prisma.invoice.aggregate({
         where: {
+          tenantId, // CRITICAL: Always filter by tenant
           type: TransactionType.SALE,
           status: InvoiceStatus.COMPLETED,
           invoiceDate: {
@@ -521,33 +561,54 @@ export class BillingService {
         _sum: { total: true },
         _count: true,
       }),
-      // Today's transaction count
+      // Today's transaction count (tenant-scoped)
       prisma.invoice.count({
         where: {
+          tenantId, // CRITICAL: Always filter by tenant
           status: InvoiceStatus.COMPLETED,
           createdAt: {
             gte: new Date(new Date().setHours(0, 0, 0, 0)),
           },
         },
       }),
+      // Last month's sales for growth comparison
+      prisma.invoice.aggregate({
+        where: {
+          tenantId, // CRITICAL: Always filter by tenant
+          type: TransactionType.SALE,
+          status: InvoiceStatus.COMPLETED,
+          invoiceDate: { gte: lastMonthStart, lte: lastMonthEnd },
+        },
+        _sum: { total: true },
+      }),
     ])
 
+    const thisMonthTotal = salesResult._sum.total?.toNumber() || 0
+    const lastMonthTotal = lastMonthSales._sum.total?.toNumber() || 0
+
+    // Calculate month-over-month growth percentage
+    const salesGrowth = lastMonthTotal > 0
+      ? ((thisMonthTotal - lastMonthTotal) / lastMonthTotal) * 100
+      : thisMonthTotal > 0 ? 100 : 0
+
     return {
-      totalSales: salesResult._sum.total?.toNumber() || 0,
+      totalSales: thisMonthTotal,
       totalPurchases: purchasesResult._sum.total?.toNumber() || 0,
       receivables: receivables._sum.currentBalance?.toNumber() || 0,
       payables: Math.abs(payables._sum.currentBalance?.toNumber() || 0),
       todaySales: todaySales._sum.total?.toNumber() || 0,
       todayTransactions,
+      lastMonthSales: lastMonthTotal,
+      salesGrowth,
     }
   }
 
   /**
-   * Get recent transactions for dashboard
+   * Get recent transactions for dashboard (tenant-scoped)
    */
-  static async getRecentTransactions(limit = 5) {
+  static async getRecentTransactions(tenantId: string, limit = 5) {
     return prisma.invoice.findMany({
-      where: { status: InvoiceStatus.COMPLETED },
+      where: { tenantId, status: InvoiceStatus.COMPLETED }, // CRITICAL: Always filter by tenant
       select: {
         id: true,
         invoiceNumber: true,
@@ -563,18 +624,19 @@ export class BillingService {
   }
 
   /**
-   * Get monthly sales data for chart (last 12 months)
+   * Get monthly sales data for chart (last 12 months) (tenant-scoped)
    */
-  static async getMonthlySales(months = 12) {
+  static async getMonthlySales(tenantId: string, months = 12) {
     const endDate = new Date()
     const startDate = new Date()
     startDate.setMonth(startDate.getMonth() - months + 1)
     startDate.setDate(1)
     startDate.setHours(0, 0, 0, 0)
 
-    // Get all completed sales invoices in the date range
+    // Get all completed sales invoices in the date range (tenant-scoped)
     const invoices = await prisma.invoice.findMany({
       where: {
+        tenantId, // CRITICAL: Always filter by tenant
         type: TransactionType.SALE,
         status: InvoiceStatus.COMPLETED,
         invoiceDate: {
@@ -621,15 +683,16 @@ export class BillingService {
   }
 
   /**
-   * Get daily sales for the current month
+   * Get daily sales for the current month (tenant-scoped)
    */
-  static async getDailySales() {
+  static async getDailySales(tenantId: string) {
     const now = new Date()
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
 
     const invoices = await prisma.invoice.findMany({
       where: {
+        tenantId, // CRITICAL: Always filter by tenant
         type: TransactionType.SALE,
         status: InvoiceStatus.COMPLETED,
         invoiceDate: {

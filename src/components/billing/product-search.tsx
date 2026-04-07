@@ -114,7 +114,7 @@ export function ProductSearch({ onSelect, autoFocus }: ProductSearchProps) {
         <Input
           ref={inputRef}
           type="text"
-          placeholder="Search products by name or SKU..."
+          placeholder="Search products by name or SKU... (F2)"
           className="pl-10 h-12 text-lg"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -122,6 +122,7 @@ export function ProductSearch({ onSelect, autoFocus }: ProductSearchProps) {
           onFocus={() => results.length > 0 && setIsOpen(true)}
           onBlur={() => setTimeout(() => setIsOpen(false), 200)}
           autoFocus={autoFocus}
+          data-search-input="true"
         />
         {isLoading && (
           <div className="absolute right-3 top-1/2 -translate-y-1/2">

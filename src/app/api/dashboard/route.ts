@@ -1,24 +1,28 @@
 /**
  * Dashboard API Route
  *
- * GET /api/dashboard - Get dashboard statistics
+ * GET /api/dashboard - Get dashboard statistics (tenant-scoped)
  */
 
 export const dynamic = "force-dynamic"
 
 import { NextRequest } from "next/server"
 import { BillingService, ProductService, PartyService } from "@/services"
-import { apiResponse, handleApiError, requireAuth } from "@/lib/api-utils"
+import {
+  apiResponse,
+  handleApiError,
+  requireTenant,
+} from "@/lib/api-utils-tenant"
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAuth()
+    const { tenantId } = await requireTenant()
 
     const searchParams = request.nextUrl.searchParams
     const startDate = searchParams.get("startDate")
     const endDate = searchParams.get("endDate")
 
-    // Fetch all dashboard data in parallel
+    // Fetch all dashboard data in parallel (all tenant-scoped)
     const [
       stats,
       lowStock,
@@ -28,14 +32,15 @@ export async function GET(request: NextRequest) {
       stockValue,
     ] = await Promise.all([
       BillingService.getDashboardStats(
+        tenantId,
         startDate ? new Date(startDate) : undefined,
         endDate ? new Date(endDate) : undefined
       ),
-      ProductService.getLowStock(5),
-      BillingService.getRecentTransactions(5),
-      PartyService.getReceivables(5),
-      PartyService.getPayables(5),
-      ProductService.getStockValue(),
+      ProductService.getLowStock(tenantId, 5),
+      BillingService.getRecentTransactions(tenantId, 5),
+      PartyService.getReceivables(tenantId, 5),
+      PartyService.getPayables(tenantId, 5),
+      ProductService.getStockValue(tenantId),
     ])
 
     return apiResponse({

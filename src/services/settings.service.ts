@@ -2,6 +2,8 @@
  * Settings Service
  *
  * Business logic for application settings management.
+ *
+ * MULTI-TENANT: All operations are scoped to tenantId
  */
 
 import { prisma } from "@/lib/db"
@@ -41,13 +43,16 @@ const defaultSettings: AppSettings = {
 
 /**
  * Settings Service class with static methods for settings operations
+ * All methods require tenantId for multi-tenant isolation
  */
 export class SettingsService {
   /**
-   * Get all settings merged with defaults
+   * Get all settings merged with defaults (tenant-scoped)
    */
-  static async getAll(): Promise<AppSettings> {
-    const settings = await prisma.settings.findMany()
+  static async getAll(tenantId: string): Promise<AppSettings> {
+    const settings = await prisma.settings.findMany({
+      where: { tenantId }, // CRITICAL: Always filter by tenant
+    })
 
     const settingsMap = new Map(
       settings.map((s) => [s.key, s.value as Record<string, unknown>])
@@ -70,11 +75,11 @@ export class SettingsService {
   }
 
   /**
-   * Get a specific setting by key
+   * Get a specific setting by key (tenant-scoped)
    */
-  static async get<K extends keyof AppSettings>(key: K): Promise<AppSettings[K]> {
-    const setting = await prisma.settings.findUnique({
-      where: { key },
+  static async get<K extends keyof AppSettings>(tenantId: string, key: K): Promise<AppSettings[K]> {
+    const setting = await prisma.settings.findFirst({
+      where: { key, tenantId }, // CRITICAL: Always filter by tenant
     })
 
     if (!setting) {
@@ -88,14 +93,15 @@ export class SettingsService {
   }
 
   /**
-   * Update a specific setting
+   * Update a specific setting (tenant-scoped)
    */
   static async update<K extends keyof AppSettings>(
+    tenantId: string,
     key: K,
     value: Partial<AppSettings[K]>
   ): Promise<AppSettings[K]> {
     // Get current value
-    const current = await this.get(key)
+    const current = await this.get(tenantId, key)
 
     // Merge with new value
     const merged = {
@@ -103,52 +109,64 @@ export class SettingsService {
       ...value,
     }
 
-    // Upsert the setting
-    await prisma.settings.upsert({
-      where: { key },
-      update: { value: merged as object },
-      create: { key, value: merged as object },
+    // Find existing setting
+    const existing = await prisma.settings.findFirst({
+      where: { key, tenantId },
     })
+
+    if (existing) {
+      // Update existing
+      await prisma.settings.update({
+        where: { id: existing.id },
+        data: { value: merged as object },
+      })
+    } else {
+      // Create new
+      await prisma.settings.create({
+        data: { tenantId, key, value: merged as object },
+      })
+    }
 
     return merged
   }
 
   /**
-   * Update all settings at once
+   * Update all settings at once (tenant-scoped)
    */
-  static async updateAll(settings: Partial<AppSettings>): Promise<AppSettings> {
+  static async updateAll(tenantId: string, settings: Partial<AppSettings>): Promise<AppSettings> {
     const updates: Promise<unknown>[] = []
 
     if (settings.business) {
-      updates.push(this.update("business", settings.business))
+      updates.push(this.update(tenantId, "business", settings.business))
     }
     if (settings.tax) {
-      updates.push(this.update("tax", settings.tax))
+      updates.push(this.update(tenantId, "tax", settings.tax))
     }
     if (settings.invoice) {
-      updates.push(this.update("invoice", settings.invoice))
+      updates.push(this.update(tenantId, "invoice", settings.invoice))
     }
 
     await Promise.all(updates)
 
-    return this.getAll()
+    return this.getAll(tenantId)
   }
 
   /**
-   * Get the default tax rate
+   * Get the default tax rate (tenant-scoped)
    */
-  static async getDefaultTaxRate(): Promise<number> {
-    const tax = await this.get("tax")
+  static async getDefaultTaxRate(tenantId: string): Promise<number> {
+    const tax = await this.get(tenantId, "tax")
     return tax.defaultTaxRate
   }
 
   /**
-   * Get invoice prefix by type
+   * Get invoice prefix by type (tenant-scoped)
    */
   static async getInvoicePrefix(
+    tenantId: string,
     type: "sale" | "purchase" | "expense"
   ): Promise<string> {
-    const invoice = await this.get("invoice")
+    const invoice = await this.get(tenantId, "invoice")
 
     switch (type) {
       case "sale":
@@ -163,32 +181,34 @@ export class SettingsService {
   }
 
   /**
-   * Check if GST is enabled
+   * Check if GST is enabled (tenant-scoped)
    */
-  static async isGSTEnabled(): Promise<boolean> {
-    const tax = await this.get("tax")
+  static async isGSTEnabled(tenantId: string): Promise<boolean> {
+    const tax = await this.get(tenantId, "tax")
     return tax.enableGST
   }
 
   /**
-   * Get business info for invoice header
+   * Get business info for invoice header (tenant-scoped)
    */
-  static async getBusinessInfo() {
-    return this.get("business")
+  static async getBusinessInfo(tenantId: string) {
+    return this.get(tenantId, "business")
   }
 
   /**
-   * Reset settings to defaults
+   * Reset settings to defaults (tenant-scoped)
    */
-  static async reset(key?: keyof AppSettings): Promise<void> {
+  static async reset(tenantId: string, key?: keyof AppSettings): Promise<void> {
     if (key) {
-      await prisma.settings.delete({
-        where: { key },
+      await prisma.settings.deleteMany({
+        where: { key, tenantId }, // CRITICAL: Always filter by tenant
       }).catch(() => {
         // Ignore if doesn't exist
       })
     } else {
-      await prisma.settings.deleteMany()
+      await prisma.settings.deleteMany({
+        where: { tenantId }, // CRITICAL: Always filter by tenant
+      })
     }
   }
 }
