@@ -1,6 +1,6 @@
-# Billing App - Multi-Tenant SaaS Billing Platform
+# Billing App - Restaurant POS & Multi-Tenant Billing Platform
 
-A production-grade, multi-tenant billing and POS (Point of Sale) application built for retail businesses. Features complete invoice management, inventory tracking, GST compliance, and team collaboration.
+A production-grade, multi-tenant billing and POS (Point of Sale) application built for restaurants and retail businesses. Features complete restaurant management with table handling, kitchen display system, recipe costing, and advanced billing operations.
 
 ![Next.js](https://img.shields.io/badge/Next.js-14-black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)
@@ -9,6 +9,15 @@ A production-grade, multi-tenant billing and POS (Point of Sale) application bui
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC)
 
 ## Features
+
+### 🍽️ Restaurant POS (Petpooja-like)
+- **Table Management** - Visual floor plan with drag-drop editor, real-time status tracking
+- **Kitchen Display System (KDS)** - Full-screen kitchen view with order cards and item tracking
+- **Kitchen Order Tickets (KOT)** - Auto-generated KOTs grouped by station
+- **Recipe/BOM Management** - Ingredient tracking with food cost analysis
+- **Split Bill** - Split by items, percentage, or equal division
+- **Merge Tables** - Combine orders from multiple tables
+- **Offline Mode** - Continue operations during network outages
 
 ### Core Billing
 - **POS Interface** - Fast, keyboard-friendly point of sale
@@ -25,7 +34,7 @@ A production-grade, multi-tenant billing and POS (Point of Sale) application bui
 
 ### Modern UX
 - **Mobile Responsive** - Works on tablets and phones
-- **PWA Support** - Installable as a native app
+- **PWA Support** - Installable as a native app with offline capability
 - **Keyboard Shortcuts** - Power user productivity features
 - **Command Palette** - Quick navigation (Cmd/Ctrl + K)
 - **Barcode Scanner** - Camera-based product scanning
@@ -33,6 +42,7 @@ A production-grade, multi-tenant billing and POS (Point of Sale) application bui
 
 ### Business Tools
 - **Dashboard Analytics** - Sales trends, receivables, insights
+- **Food Cost Reports** - Recipe cost vs selling price analysis
 - **Reports & Exports** - CSV exports, GST reports
 - **Notifications** - In-app alerts for important events
 - **Audit Logs** - Track all system activities
@@ -93,11 +103,22 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ## Documentation
 
+### Getting Started
 - [Architecture Overview](./docs/ARCHITECTURE.md)
 - [API Documentation](./docs/API.md)
 - [Feature Guide](./docs/FEATURES.md)
 - [Development Guide](./docs/DEVELOPMENT.md)
 - [Deployment Guide](./docs/DEPLOYMENT.md)
+
+### Restaurant POS Features
+- [Restaurant POS Overview](./docs/RESTAURANT-POS.md) - Complete guide to restaurant features
+- [Table Management](./docs/TABLE-MANAGEMENT.md) - Floor plans and table operations
+- [Kitchen Display System](./docs/KDS.md) - KOT and kitchen workflow
+- [Recipe Management](./docs/RECIPES.md) - BOM and food cost tracking
+- [Bill Operations](./docs/BILL-OPERATIONS.md) - Split and merge functionality
+- [Offline Mode](./docs/OFFLINE-MODE.md) - PWA and offline capabilities
+
+### Reference
 - [Product Roadmap](./docs/ROADMAP.md)
 
 ## Project Structure
@@ -112,6 +133,9 @@ billing-app/
 │   │   ├── (auth)/        # Login, registration
 │   │   ├── (dashboard)/   # Protected app routes
 │   │   │   ├── billing/   # POS interface
+│   │   │   ├── tables/    # 🍽️ Table management & floor plan editor
+│   │   │   ├── kds/       # 🍽️ Kitchen Display System
+│   │   │   ├── recipes/   # 🍽️ Recipe/BOM management
 │   │   │   ├── products/  # Product management
 │   │   │   ├── invoices/  # Invoice list/details
 │   │   │   ├── parties/   # Customers/suppliers
@@ -119,19 +143,41 @@ billing-app/
 │   │   │   ├── settings/  # Configuration
 │   │   │   └── admin/     # Super admin panel
 │   │   └── api/           # API routes
+│   │       ├── floor-plans/   # 🍽️ Floor plan APIs
+│   │       ├── tables/        # 🍽️ Table APIs
+│   │       ├── orders/        # 🍽️ Order APIs
+│   │       ├── kds/           # 🍽️ KDS APIs
+│   │       ├── recipes/       # 🍽️ Recipe APIs
+│   │       ├── bills/         # 🍽️ Split/merge APIs
+│   │       └── ...
 │   ├── components/
 │   │   ├── ui/            # shadcn components
-│   │   ├── billing/       # POS components
+│   │   ├── billing/       # POS & split bill components
+│   │   ├── tables/        # 🍽️ Table card, floor plan view/editor
+│   │   ├── kds/           # 🍽️ KDS display, order ticket
+│   │   ├── recipes/       # 🍽️ Recipe form
+│   │   ├── offline/       # 🍽️ Offline indicator
 │   │   ├── dashboard/     # Dashboard widgets
 │   │   ├── layout/        # Sidebar, header
 │   │   └── ...
 │   ├── services/          # Business logic layer
+│   │   ├── table.service.ts   # 🍽️ Floor plan & table operations
+│   │   ├── order.service.ts   # 🍽️ Order lifecycle
+│   │   ├── kds.service.ts     # 🍽️ Kitchen display logic
+│   │   ├── recipe.service.ts  # 🍽️ Recipe/BOM management
+│   │   ├── bill.service.ts    # 🍽️ Split/merge operations
+│   │   ├── offline.service.ts # 🍽️ IndexedDB storage
+│   │   └── ...
+│   ├── hooks/
+│   │   ├── use-offline-mode.ts # 🍽️ Offline status hook
+│   │   └── ...
 │   ├── lib/               # Utilities, auth, db
-│   ├── hooks/             # Custom React hooks
 │   ├── types/             # TypeScript types
 │   └── validations/       # Zod schemas
 ├── public/
 │   ├── icons/             # PWA icons
+│   ├── sounds/            # 🍽️ Alert sounds for KDS
+│   ├── sw.js              # 🍽️ Service worker for offline
 │   └── manifest.json      # PWA manifest
 └── docs/                  # Documentation
 ```
@@ -172,6 +218,8 @@ RAZORPAY_KEY_SECRET=""
 | `?` | Show all shortcuts |
 | `G then H` | Go to Dashboard |
 | `G then B` | Go to Billing |
+| `G then T` | Go to Tables |
+| `G then K` | Go to Kitchen (KDS) |
 | `G then P` | Go to Products |
 | `G then I` | Go to Invoices |
 | `N then S` | New Sale |
@@ -182,7 +230,16 @@ RAZORPAY_KEY_SECRET=""
 ## Roadmap
 
 ### Completed (v1.0)
-- Phases 1-16: Full billing platform with multi-tenancy, POS, invoicing, reports, PWA, and more
+- Phases 1-16: Full billing platform with multi-tenancy, POS, invoicing, reports, PWA
+
+### Completed (v2.0) - Restaurant POS
+- ✅ Table Management with visual floor plan editor
+- ✅ Kitchen Display System (KDS) with order tracking
+- ✅ Kitchen Order Tickets (KOT) generation
+- ✅ Recipe/BOM Management with food cost analysis
+- ✅ Split Bill (by items, percentage, equal)
+- ✅ Merge Tables and Bills
+- ✅ Enhanced Offline Mode with IndexedDB
 
 ### Coming Soon
 | Phase | Feature | Priority |
@@ -194,6 +251,8 @@ RAZORPAY_KEY_SECRET=""
 | 21 | Multi-Currency Support | Medium |
 | 22 | Advanced Inventory (Warehouses, Batches) | Medium |
 | 23 | Purchase Orders | Medium |
+| 24 | Reservation System | Medium |
+| 25 | Waiter/Staff App | Low |
 
 See the full [Product Roadmap](./docs/ROADMAP.md) for all planned features.
 
