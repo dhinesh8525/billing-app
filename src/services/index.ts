@@ -20,6 +20,12 @@ export { UsageService } from "./usage.service"
 export { AnalyticsService } from "./analytics.service"
 export { ApiKeyService } from "./api-key.service"
 export { AlertService } from "./alert.service"
+// Restaurant POS services
+export { TableService } from "./table.service"
+export { OrderService } from "./order.service"
+export { KDSService } from "./kds.service"
+export { RecipeService } from "./recipe.service"
+export { BillService } from "./bill.service"
 
 // Re-export types
 export type { PlanFeatures, PlanWithFeatures } from "./plan.service"

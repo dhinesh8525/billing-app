@@ -23,6 +23,9 @@ import {
   ChevronDown,
   CreditCard,
   ShieldCheck,
+  LayoutGrid,
+  ChefHat,
+  UtensilsCrossed,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 
@@ -42,6 +45,11 @@ const navItems: NavItem[] = [
     icon: <Home className="h-5 w-5" />,
   },
   {
+    title: "Tables",
+    href: "/tables",
+    icon: <LayoutGrid className="h-5 w-5" />,
+  },
+  {
     title: "Items",
     href: "/products",
     icon: <Package className="h-5 w-5" />,
@@ -52,6 +60,11 @@ const navItems: NavItem[] = [
     icon: <ShoppingCart className="h-5 w-5" />,
   },
   {
+    title: "Kitchen",
+    href: "/kds",
+    icon: <ChefHat className="h-5 w-5" />,
+  },
+  {
     title: "Invoices",
     href: "/invoices",
     icon: <FileText className="h-5 w-5" />,
@@ -60,6 +73,11 @@ const navItems: NavItem[] = [
     title: "Parties",
     href: "/parties",
     icon: <Users className="h-5 w-5" />,
+  },
+  {
+    title: "Recipes",
+    href: "/recipes",
+    icon: <UtensilsCrossed className="h-5 w-5" />,
   },
   {
     title: "Reports",
