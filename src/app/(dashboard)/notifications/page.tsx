@@ -235,7 +235,7 @@ export default function NotificationsPage() {
 
       {/* Tabs */}
       <Tabs value={filter} onValueChange={(v) => setFilter(v as "all" | "unread")}>
-        <TabsList>
+        <TabsList variant="card">
           <TabsTrigger value="all">
             All ({total})
           </TabsTrigger>

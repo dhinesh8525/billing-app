@@ -192,7 +192,7 @@ export default function SettingsPage() {
       )}
 
       <Tabs defaultValue="business" className="space-y-6">
-        <TabsList>
+        <TabsList variant="card">
           <TabsTrigger value="business" className="flex items-center gap-2">
             <Building2 className="h-4 w-4" />
             Business

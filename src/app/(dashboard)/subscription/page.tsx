@@ -93,22 +93,14 @@ interface Subscription {
 }
 
 interface Usage {
-  plan: {
-    name: string
-    features: Plan["features"]
-  }
-  usage: {
-    products: number
-    invoices: number
-    users: number
-    parties: number
-  }
-  limits: Plan["features"]
-  percentages: {
-    products: number
-    invoices: number
-    users: number
-    parties: number
+  products: { current: number; limit: number; percentage: number }
+  invoices: { current: number; limit: number; percentage: number }
+  users: { current: number; limit: number; percentage: number }
+  parties: { current: number; limit: number; percentage: number }
+  features: {
+    reports: boolean
+    multiLocation: boolean
+    api: boolean
   }
 }
 
@@ -369,7 +361,7 @@ export default function SubscriptionPage() {
       </div>
 
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList>
+        <TabsList variant="card">
           <TabsTrigger value="overview" className="flex items-center gap-2">
             <CreditCard className="h-4 w-4" />
             Overview
@@ -477,7 +469,7 @@ export default function SubscriptionPage() {
                     <div>
                       <p className="text-sm text-slate-500">Products</p>
                       <p className="text-lg font-semibold">
-                        {usage.usage.products} / {formatLimit(usage.limits.maxProducts)}
+                        {usage.products.current} / {formatLimit(usage.products.limit)}
                       </p>
                     </div>
                   </div>
@@ -493,7 +485,7 @@ export default function SubscriptionPage() {
                     <div>
                       <p className="text-sm text-slate-500">Invoices</p>
                       <p className="text-lg font-semibold">
-                        {usage.usage.invoices} / {formatLimit(usage.limits.maxInvoices)}
+                        {usage.invoices.current} / {formatLimit(usage.invoices.limit)}
                       </p>
                     </div>
                   </div>
@@ -509,7 +501,7 @@ export default function SubscriptionPage() {
                     <div>
                       <p className="text-sm text-slate-500">Users</p>
                       <p className="text-lg font-semibold">
-                        {usage.usage.users} / {formatLimit(usage.limits.maxUsers)}
+                        {usage.users.current} / {formatLimit(usage.users.limit)}
                       </p>
                     </div>
                   </div>
@@ -525,7 +517,7 @@ export default function SubscriptionPage() {
                     <div>
                       <p className="text-sm text-slate-500">Parties</p>
                       <p className="text-lg font-semibold">
-                        {usage.usage.parties} / {formatLimit(usage.limits.maxParties)}
+                        {usage.parties.current} / {formatLimit(usage.parties.limit)}
                       </p>
                     </div>
                   </div>
@@ -665,14 +657,14 @@ export default function SubscriptionPage() {
                         Products
                       </span>
                       <span>
-                        {usage.usage.products} / {formatLimit(usage.limits.maxProducts)}
+                        {usage.products.current} / {formatLimit(usage.products.limit)}
                       </span>
                     </div>
                     <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                       <div
-                        className={`h-full ${getUsageColor(usage.percentages.products)}`}
+                        className={`h-full ${getUsageColor(usage.products.percentage)}`}
                         style={{
-                          width: `${Math.min(usage.percentages.products, 100)}%`,
+                          width: `${Math.min(usage.products.percentage, 100)}%`,
                         }}
                       />
                     </div>
@@ -686,14 +678,14 @@ export default function SubscriptionPage() {
                         Invoices (this month)
                       </span>
                       <span>
-                        {usage.usage.invoices} / {formatLimit(usage.limits.maxInvoices)}
+                        {usage.invoices.current} / {formatLimit(usage.invoices.limit)}
                       </span>
                     </div>
                     <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                       <div
-                        className={`h-full ${getUsageColor(usage.percentages.invoices)}`}
+                        className={`h-full ${getUsageColor(usage.invoices.percentage)}`}
                         style={{
-                          width: `${Math.min(usage.percentages.invoices, 100)}%`,
+                          width: `${Math.min(usage.invoices.percentage, 100)}%`,
                         }}
                       />
                     </div>
@@ -707,14 +699,14 @@ export default function SubscriptionPage() {
                         Team Members
                       </span>
                       <span>
-                        {usage.usage.users} / {formatLimit(usage.limits.maxUsers)}
+                        {usage.users.current} / {formatLimit(usage.users.limit)}
                       </span>
                     </div>
                     <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                       <div
-                        className={`h-full ${getUsageColor(usage.percentages.users)}`}
+                        className={`h-full ${getUsageColor(usage.users.percentage)}`}
                         style={{
-                          width: `${Math.min(usage.percentages.users, 100)}%`,
+                          width: `${Math.min(usage.users.percentage, 100)}%`,
                         }}
                       />
                     </div>
@@ -728,14 +720,14 @@ export default function SubscriptionPage() {
                         Parties (Customers/Suppliers)
                       </span>
                       <span>
-                        {usage.usage.parties} / {formatLimit(usage.limits.maxParties)}
+                        {usage.parties.current} / {formatLimit(usage.parties.limit)}
                       </span>
                     </div>
                     <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                       <div
-                        className={`h-full ${getUsageColor(usage.percentages.parties)}`}
+                        className={`h-full ${getUsageColor(usage.parties.percentage)}`}
                         style={{
-                          width: `${Math.min(usage.percentages.parties, 100)}%`,
+                          width: `${Math.min(usage.parties.percentage, 100)}%`,
                         }}
                       />
                     </div>
@@ -747,12 +739,12 @@ export default function SubscriptionPage() {
                     <div className="grid gap-2 md:grid-cols-3">
                       <div
                         className={`flex items-center gap-2 text-sm ${
-                          usage.limits.reports
+                          usage.features.reports
                             ? "text-green-600"
                             : "text-slate-400"
                         }`}
                       >
-                        {usage.limits.reports ? (
+                        {usage.features.reports ? (
                           <CheckCircle2 className="h-4 w-4" />
                         ) : (
                           <XCircle className="h-4 w-4" />
@@ -761,12 +753,12 @@ export default function SubscriptionPage() {
                       </div>
                       <div
                         className={`flex items-center gap-2 text-sm ${
-                          usage.limits.multiLocation
+                          usage.features.multiLocation
                             ? "text-green-600"
                             : "text-slate-400"
                         }`}
                       >
-                        {usage.limits.multiLocation ? (
+                        {usage.features.multiLocation ? (
                           <CheckCircle2 className="h-4 w-4" />
                         ) : (
                           <XCircle className="h-4 w-4" />
@@ -775,12 +767,12 @@ export default function SubscriptionPage() {
                       </div>
                       <div
                         className={`flex items-center gap-2 text-sm ${
-                          usage.limits.api
+                          usage.features.api
                             ? "text-green-600"
                             : "text-slate-400"
                         }`}
                       >
-                        {usage.limits.api ? (
+                        {usage.features.api ? (
                           <CheckCircle2 className="h-4 w-4" />
                         ) : (
                           <XCircle className="h-4 w-4" />

@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { toast } from "sonner"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Printer,
   Save,
@@ -40,7 +41,6 @@ import {
 } from "lucide-react"
 import { InvoiceTemplateA4 } from "@/components/invoice/invoice-template-a4"
 import { InvoiceTemplateThermal } from "@/components/invoice/invoice-template-thermal"
-import { cn } from "@/lib/utils"
 
 // Sample invoice data for preview
 const sampleInvoiceA4 = {
@@ -139,7 +139,7 @@ interface BillFormatSettings {
 export default function BillFormatPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [activeFormat, setActiveFormat] = useState<"a4" | "thermal">("a4")
+  const [activeFormat, setActiveFormat] = useState<string>("a4")
 
   const a4Ref = useRef<HTMLDivElement>(null)
   const thermalRef = useRef<HTMLDivElement>(null)
@@ -276,40 +276,25 @@ export default function BillFormatPage() {
         </Button>
       </div>
 
-      {/* Main Layout: Settings Left, Preview Right */}
-      <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
-        {/* Left Panel - Settings */}
-        <div className="space-y-4">
-          {/* Format Selector - Compact Tabs */}
-          <div className="flex rounded-lg border bg-slate-100 p-1">
-            <button
-              onClick={() => setActiveFormat("a4")}
-              className={cn(
-                "flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                activeFormat === "a4"
-                  ? "bg-white text-slate-900 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              <FileText className="h-4 w-4" />
-              A4 Invoice
-            </button>
-            <button
-              onClick={() => setActiveFormat("thermal")}
-              className={cn(
-                "flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                activeFormat === "thermal"
-                  ? "bg-white text-slate-900 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              <ReceiptText className="h-4 w-4" />
-              Thermal
-            </button>
-          </div>
+      {/* Format Selector - Card Tabs */}
+      <Tabs value={activeFormat} onValueChange={setActiveFormat}>
+        <TabsList variant="card">
+          <TabsTrigger value="a4" className="flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            A4 Invoice
+          </TabsTrigger>
+          <TabsTrigger value="thermal" className="flex items-center gap-2">
+            <ReceiptText className="h-4 w-4" />
+            Thermal Receipt
+          </TabsTrigger>
+        </TabsList>
 
-          {/* A4 Settings */}
-          {activeFormat === "a4" && (
+        {/* Main Layout: Settings Left, Preview Right */}
+        <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
+          {/* Left Panel - Settings */}
+          <div className="space-y-4">
+            {/* A4 Settings */}
+            <TabsContent value="a4" className="mt-0">
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
@@ -396,10 +381,10 @@ export default function BillFormatPage() {
                 </div>
               </CardContent>
             </Card>
-          )}
+            </TabsContent>
 
-          {/* Thermal Settings */}
-          {activeFormat === "thermal" && (
+            {/* Thermal Settings */}
+            <TabsContent value="thermal" className="mt-0">
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
@@ -481,7 +466,7 @@ export default function BillFormatPage() {
                 </div>
               </CardContent>
             </Card>
-          )}
+            </TabsContent>
 
           {/* Common Settings */}
           <Card>
@@ -602,7 +587,8 @@ export default function BillFormatPage() {
             )}
           </CardContent>
         </Card>
-      </div>
+        </div>
+      </Tabs>
     </div>
   )
 }
